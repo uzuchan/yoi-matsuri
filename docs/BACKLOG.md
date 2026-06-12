@@ -6,7 +6,7 @@
 
 | 優先 | Task ID | 内容 | Owner | Reviewer | VS要件 | Status |
 |---|---|---|---|---|---|---|
-| P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | READY |
+| P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | COMPLETE |
 | P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | PENDING |
 | P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | PENDING |
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer | critical-reviewer | 3 | PENDING |
@@ -56,7 +56,7 @@ Acceptance Criteria：
 Tests：tests/core/scene-manager.test.ts, tests/core/game-loop.test.ts, tests/core/event-bus.test.ts, tests/core/input-manager.test.ts, e2e/smoke.spec.ts。コマンド: npm run typecheck && npm run lint && npm run test && npm run build, npm run test:e2e
 Evidence：4コマンドの実行ログ、test:e2eの結果、バンドルサイズの出力、(可能なら)描画画面のスクリーンショット
 Risks：(1) Playwrightブラウザのダウンロード失敗 → AC8のみBLOCKEDとして報告しLead判断。(2) three追加でバンドル増 → ツリーシェイク確認、500KB超なら報告。(3) strict化で既存テンプレートコードにエラー → 残骸削除で同時解消
-Status：READY
+Status：COMPLETE(2026-06-13、ループ1で完了。レビュー: reports/reviews/REV-T-001-1.md = APPROVE)
 ```
 
 ### T-001で追加する依存(technical-architect評価済み・DECISION_LOG記録済み)
