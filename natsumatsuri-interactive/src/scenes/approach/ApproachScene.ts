@@ -18,6 +18,7 @@ import {
   computeCrowdPlacements,
   computeLanternAnchors,
   createCrowd,
+  createFireworks,
   createGround,
   createLanterns,
   createLighting,
@@ -26,14 +27,20 @@ import {
   createSky,
   createStall,
   createTorii,
+  FireworksTimer,
+  FootstepCadence,
   integrateMovement,
   keyboardMoveVector,
   mouseForwardVector,
   pickRepresentativeLanterns,
   ProximityTracker,
+  walkBobOffset,
   type ContactCircle,
+  type FireworkColor,
+  type FireworksObject,
   type PromptLabel,
   type Vec2,
+  type Vec3,
   type WorldObject,
 } from '../../world'
 
@@ -98,7 +105,20 @@ export class ApproachScene implements Scene {
   // --- T-003 のランタイム状態 ---
   private readonly player: WorldObject
   private readonly prompt: PromptLabel
+  private readonly fireworks: FireworksObject
   private readonly proximity = new ProximityTracker()
+
+  // --- T-009: 花火タイマー / 足音 / 歩行ボブ ---
+  /** 花火の打ち上げタイマー(初回〜10s、以降30〜45s間隔)。 */
+  private readonly fireworksTimer = new FireworksTimer()
+  /** 足音 0.45s 間隔(移動中のみ。INTERACTION_SPEC §4)。 */
+  private readonly footsteps = new FootstepCadence()
+  /** 歩行ボブの位相累積秒(移動中のみ進める)。 */
+  private bobPhase = 0
+  /** 歩行ボブの強さ 0..1(移動で1、停止で0へ減衰。酔い防止のため緩やかに)。 */
+  private bobIntensity = 0
+  /** 直近フレームでプレイヤーが移動したか(footstep / bob 判定用)。 */
+  private movedThisFrame = false
   /** プレイヤーの水平位置(world座標)。three の Vector ではなく純データで保持。 */
   private readonly playerPos: Vec2 = { x: PLAYER_START.x, z: PLAYER_START.z }
   /** マウス移動由来の視線ヨー(ラジアン)。±LOOK_YAW_MAX。 */
@@ -153,6 +173,13 @@ export class ApproachScene implements Scene {
     const lighting = createLighting(lanternLightAnchors)
     this.player = createPlayer()
 
+    // 花火(T-009)。launch/burst のコールバックを EventBus へ橋渡しする(視覚と音の同期)。
+    // 発火責任は scenes/approach(AC2)。audio は fireworks:launch/burst を購読して鳴らす。
+    this.fireworks = createFireworks({
+      onLaunch: (color, position) => this.emitFirework('fireworks:launch', color, position),
+      onBurst: (color, position) => this.emitFirework('fireworks:burst', color, position),
+    })
+
     // プロンプトラベルは屋台のやや参道中心寄り・カウンター上に置く(開口側=-x方向)。
     this.prompt = createPromptLabel({
       x: STALL_POSITION.x - 1.2,
@@ -168,6 +195,7 @@ export class ApproachScene implements Scene {
       torii,
       stall,
       crowd,
+      this.fireworks,
       this.player,
       this.prompt,
     ]
@@ -190,6 +218,9 @@ export class ApproachScene implements Scene {
     this.prompt.setVisible(false)
     this.lookYaw = 0
     this.inProximity = false
+    // 歩行ボブ・足音の状態は再入場時にリセット(会話復帰直後に1歩鳴らさない)。
+    this.bobIntensity = 0
+    this.movedThisFrame = false
     // 会話から approach へ戻った直後に、まだ押されている E/クリックを誤って
     // 再遷移に拾わないよう、エッジ基準を現在の押下状態へ揃える(立ち上がりのみ反応)。
     this.prevInteractDown = ctx.input.isDown('KeyE')
@@ -211,12 +242,49 @@ export class ApproachScene implements Scene {
   update(dt: number): void {
     this.updatePlayer(dt)
     this.updateProximity()
+    this.updateAtmosphere(dt)
     this.updateCamera(dt)
 
-    // 提灯の揺れ・プロンプトのフェードなど動的要素を駆動。
+    // 提灯・群衆の揺れ・花火・プロンプトのフェードなど動的要素を駆動。
     for (const w of this.animated) {
       w.update?.(dt)
     }
+  }
+
+  /**
+   * T-009 雰囲気演出の駆動: 花火タイマー / 足音 / 歩行ボブの位相・強さ。
+   * 花火の launch/burst は fireworks 内部のコールバック経由で EventBus へ発火する(emitFirework)。
+   */
+  private updateAtmosphere(dt: number): void {
+    // 花火: タイマーが満ちたら1発打ち上げる(初回〜10s、以降30〜45s間隔)。
+    if (this.fireworksTimer.tick(dt)) {
+      this.fireworks.launchOne(this.fireworksTimer.lastSeed)
+    }
+
+    // 足音: 移動中のみ 0.45s 間隔で sfx:play{footstep}(INTERACTION_SPEC §4)。
+    if (this.footsteps.tick(dt, this.movedThisFrame)) {
+      this.events?.emit('sfx:play', { name: 'footstep' })
+    }
+
+    // 歩行ボブの位相・強さ: 移動中は位相を進め強さを1へ、停止で0へ緩やかに減衰(酔い防止)。
+    if (this.movedThisFrame) {
+      this.bobPhase += dt
+      this.bobIntensity = Math.min(1, this.bobIntensity + dt / 0.12)
+    } else {
+      this.bobIntensity = Math.max(0, this.bobIntensity - dt / 0.18)
+    }
+  }
+
+  /** 花火 launch/burst を EventBus へ橋渡しする(three 非依存のプレーンペイロード)。 */
+  private emitFirework(
+    event: 'fireworks:launch' | 'fireworks:burst',
+    color: FireworkColor,
+    position: Vec3,
+  ): void {
+    this.events?.emit(event, {
+      color,
+      position: { x: position.x, y: position.y, z: position.z },
+    })
   }
 
   render(_alpha: number): void {
@@ -287,10 +355,17 @@ export class ApproachScene implements Scene {
       moveZ = fwd.z
     }
 
+    const prevX = this.playerPos.x
+    const prevZ = this.playerPos.z
     const next = integrateMovement(this.playerPos, { x: moveX, z: moveZ }, dt, undefined, WALK_BOUNDS)
     this.playerPos.x = next.x
     this.playerPos.z = next.z
     this.player.object.position.set(next.x, 0, next.z)
+
+    // 実際に位置が動いたか(壁際でクランプされ移動入力があっても進めない場合は「停止」扱い)。
+    // これを足音・歩行ボブの「移動中」判定に使う(停止中は鳴らさない / ボブしない)。
+    const EPS = 1e-5
+    this.movedThisFrame = Math.abs(next.x - prevX) > EPS || Math.abs(next.z - prevZ) > EPS
   }
 
   // --- 近接判定 ---
@@ -304,6 +379,9 @@ export class ApproachScene implements Scene {
     if (edge === 'enter') {
       this.inProximity = true
       this.events?.emit('stall:approach', { stallId: STALL_ID })
+      // T-009 / INTERACTION_SPEC §3.1: 近接圏に入った瞬間に prompt を1回(stall:approach と同時)。
+      // 圏内滞在中の連続発火はない(エッジ判定が単発を保証)。
+      this.events?.emit('sfx:play', { name: 'prompt' })
       this.prompt.setVisible(true)
     } else if (edge === 'leave') {
       this.inProximity = false
@@ -356,9 +434,11 @@ export class ApproachScene implements Scene {
     const cosYaw = Math.cos(this.lookYaw)
     const offsetX = CAMERA_BACK_DISTANCE * sinYaw
     const offsetZ = CAMERA_BACK_DISTANCE * cosYaw
+    // 歩行ボブ(INTERACTION_SPEC §3.1: カメラ上下 ±0.03m)。移動中のみ、停止で減衰。
+    const bob = walkBobOffset(this.bobPhase, this.bobIntensity)
     this.desiredCamPos.set(
       this.playerPos.x + offsetX,
-      CAMERA_HEIGHT,
+      CAMERA_HEIGHT + bob,
       this.playerPos.z + offsetZ,
     )
 

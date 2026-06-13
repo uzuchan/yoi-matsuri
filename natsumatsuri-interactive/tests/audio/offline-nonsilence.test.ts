@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { SFX_NAMES, resolveSfx } from '../../src/audio/sfx'
+import { FIREWORKS_SFX } from '../../src/audio/ambient/fireworksSfx'
 
 /**
  * 各合成関数が「非無音(RMS>0)」を出すことを OfflineAudioContext で自動確認する(T-008 Evidence)。
@@ -47,6 +48,14 @@ describeOffline('合成関数の非無音(OfflineAudioContext)', () => {
     const rendered = await ctx.startRendering()
     // 単音は十分な余裕(<1.0)を持つ。マスターのリミッタは実機 AudioEngine 側で担保。
     expect(peak(rendered)).toBeLessThan(1.0)
+  })
+
+  // 花火(T-009): launch / burst の合成関数が非無音を出すこと。
+  it.each(['launch', 'burst'] as const)('fireworks "%s" は非無音(RMS>0)を出す', async (kind) => {
+    const ctx = new OfflineCtor(1, 44100 * 2, 44100)
+    FIREWORKS_SFX[kind](ctx, ctx.destination, 0)
+    const rendered = await ctx.startRendering()
+    expect(rms(rendered)).toBeGreaterThan(0)
   })
 })
 

@@ -33,18 +33,35 @@ interface ResultPayload {
 //
 // 座標系の確認(world/stall.ts / world/lighting.ts):
 //   - 屋台 group は STALL_POSITION(x:5,z:-26)に置かれ rotation.y=-90°。
-//   - 店主は world ≈ (4.5, _, -25.7)、裸電球2個は world ≈ (5,2.1,-26.9)/(5,2.1,-25.1)。
+//   - 店主(keeper)は local(0.3,0,halfD-0.5)= group 回転後 world ≈ (4.5, _, -25.7)。
+//     頭部 local y=1.66 → 店主頭部 world ≈ (4.5, 1.66, -25.7)。
+//   - 裸電球2個は world ≈ (5,2.1,-26.9)/(5,2.1,-25.1)。
 //   - approach のプロンプト/プレイヤーは参道中心側(-x)から屋台へ対面する(prompt が STALL_x-1.2=3.8)。
 //   - 屋台 PointLight(§7-4 屋台前を最も明るく)は world ≈ (4, _, -26)=屋台中心の -x 側に置かれる。
 // よって ART §5「正面=参道側=プレイヤーが屋台に対面した向き」かつ「屋台前(裸電球)が最も明るい」
-// (§7-4)を同時に満たす視点は屋台中心の -x 方向。カメラは -x 側へ水平距離 4.5m・高さ 1.8m に置き、
-// 屋台 PointLight をカメラと店主の間に挟んで店主前面を順光で照らす。注視点は屋台中心 +y1.5(店主頭部)。
+// (§7-4)を同時に満たす視点は屋台中心の -x 方向。カメラは -x 側へ水平距離 4.5m・高さ 1.8m に置く。
+//
+// T-009(art-director Minor 解消): T-007 ループ2 まではカメラを屋台中心(店主)正面に置いたため、
+// 店主シルエットが画面横中央(±5%)へ来て中央の結果パネル(80%透過)背後に完全に隠れ、ART §5 構図要件
+//「頭〜肩が左右どちらかにはみ出して読める」が成立していなかった(reports/screenshots/T-007-result.png)。
+// art-director 推奨案(a)を採る: (1)注視点を屋台中心ではなく店主頭部 world≈(4.5,1.66,-25.7)へ寄せ、
+// (2)カメラ rig 全体を「カメラの右」方向(ここでは world +z 方向。カメラ前方が +x・上が +y のため右=-z で、
+//    +z へ rig を平行移動すると被写体は画面左へ寄る)へ平行移動(パン)して、店主を画面中央から左へ約23%
+//    ずらす。これで店主の頭〜肩が中央パネルの左外へはみ出して読める。パン後も裸電球2個・屋台前(最明)は
+//    画面内に残る(§7-4 維持。照明は不変で、視点のみ平行移動)。屋角の俯角(店主頭部 y1.5 を注視)も維持。
 const RESULT_CAMERA_FOV = 50 // ART §5: 50°
 const RESULT_CAMERA_DISTANCE = 4.5 // ART §5: 屋台中心へ水平距離 4.5m(正面=参道側=-x 側)
 const RESULT_CAMERA_HEIGHT = 1.8 // ART §5: 高さ 1.8m
-const RESULT_LOOK_HEIGHT = 1.5 // ART §5: 注視点 = 屋台中心 +y1.5(店主頭部)。STALL_POSITION.y=0。
+const RESULT_LOOK_HEIGHT = 1.5 // ART §5: 注視点高さ = +y1.5(ほぼ店主頭部 y1.66。やや見上げる客の目線)
 const RESULT_CAMERA_NEAR = 0.1
 const RESULT_CAMERA_FAR = 400
+
+// 店主頭部の world 座標(world/stall.ts: group 回転後 ≈ (4.5,1.66,-25.7))。注視点とパン基準に使う。
+const KEEPER_X = 4.5
+const KEEPER_Z = -25.7
+// パン量(world +z m)。rig(カメラ位置+注視点)を +z へ平行移動し、店主を画面中央から左へ寄せる。
+// 1280×720・FOV50°・距離4.5m では +1.8m で店主頭部が画面 x≈23%(中央パネル左端 x≈28% の左外)へ出る。
+const RESULT_KEEPER_PAN_Z = 1.8
 
 /**
  * 結果シーン(T-007 / GDD §3.2・INTERACTION_SPEC §3.4・D-008)。
@@ -104,13 +121,15 @@ export class ResultScene implements Scene {
       RESULT_CAMERA_NEAR,
       RESULT_CAMERA_FAR,
     )
-    // 屋台正面(参道側=-x)の固定位置へ。注視点は屋台中心 +y1.5(店主頭部)。
+    // 屋台正面(参道側=-x)の固定位置へ。rig 全体を +z へ RESULT_KEEPER_PAN_Z パンし(注視点も同量パン)、
+    // 注視点は店主頭部 X(=4.5)・高さ +y1.5 とする。これで店主が画面中央から左へ寄り、中央パネル背後から
+    // 頭〜肩がはみ出して読める(T-009 / ART §5 構図要件・art-director Minor 解消)。
     this.camera.position.set(
       STALL_POSITION.x - RESULT_CAMERA_DISTANCE,
       RESULT_CAMERA_HEIGHT,
-      STALL_POSITION.z,
+      KEEPER_Z + RESULT_KEEPER_PAN_Z,
     )
-    this.camera.lookAt(new Vector3(STALL_POSITION.x, RESULT_LOOK_HEIGHT, STALL_POSITION.z))
+    this.camera.lookAt(new Vector3(KEEPER_X, RESULT_LOOK_HEIGHT, KEEPER_Z + RESULT_KEEPER_PAN_Z))
   }
 
   /** 合成点(App.tsx)から結果 HUD の購読者を注入する(EventBus を経由しない React 橋渡し)。 */

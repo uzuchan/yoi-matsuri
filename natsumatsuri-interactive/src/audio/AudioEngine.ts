@@ -9,7 +9,7 @@
  *               → [DynamicsCompressor(リミッタ)] → destination
  *  - EventBus を購読して鳴らす(ゲームコードからは直接呼ばれない / TECHNICAL_ARCHITECTURE §2):
  *      sfx:play{name} / goldfish:* / scene:transition / stall:approach / stall:leave
- *      (fireworks:launch/burst は GameEvents 未定義のため T-009 連携で有効化 — 下記参照)
+ *      / fireworks:launch / fireworks:burst(花火 — T-009 で発火側・購読を有効化済み)
  *  - 空間/場面ミックス: 屋台近接で祭囃子・群衆を強める(クロスフェード)、goldfish 中は環境音 -6dB、
  *    result/approach で復帰。
  *
@@ -217,17 +217,14 @@ export class AudioEngine {
       events.on('stall:approach', () => this.setNearStall(true)),
       events.on('stall:leave', () => this.setNearStall(false)),
       events.on('scene:transition', (p) => this.onSceneTransition(p)),
+      // 花火(T-009): 視覚側(world/fireworks)が launch → 約1.2s → burst を発火する。
+      // launch=上昇ホイッスル / burst=ノイズバースト+低域ドン(AUDIO_SPEC §3)。合成関数は
+      // ambient/fireworksSfx.ts、再生は sfx カテゴリ経由でマスター→リミッタを通る(playFireworks)。
+      events.on('fireworks:launch', () => this.playFireworks('launch')),
+      events.on('fireworks:burst', () => this.playFireworks('burst')),
       // goldfish:* は将来の追加演出フックのため購読しておく(現状 sfx は sfx:play 経由で完結)。
       // goldfish:caught/poi-torn/finished の音は GoldfishScene が sfx:play へ写像済み(eventMap)。
     )
-
-    // fireworks:launch / fireworks:burst は現状 GameEvents に未定義(花火の視覚は T-009)。
-    // GameEvents に追加され次第、ここで購読を有効化する(合成関数は ambient/fireworksSfx.ts に実装済み):
-    //   this.unsubscribers.push(
-    //     events.on('fireworks:launch', () => this.playFireworks('launch')),
-    //     events.on('fireworks:burst', () => this.playFireworks('burst')),
-    //   )
-    // ※ GameEvents への追加は core 所有(technical-architect)。audio 側は他イベントで完結させる(AC3)。
   }
 
   /** 効果音を都度合成して鳴らす(AUDIO_SPEC §4)。未知の name / 未起動は安全に no-op。 */
@@ -241,8 +238,9 @@ export class AudioEngine {
   }
 
   /**
-   * 花火 sfx(T-009 連携)。GameEvents に fireworks:* が追加されたら subscribe から呼ぶ。
-   * sfx カテゴリで合成する(打ち上げ/開花のいずれも単発で完結)。
+   * 花火 sfx(T-009)。`fireworks:launch` / `fireworks:burst` 購読から呼ばれる。
+   * sfx カテゴリ(→ master → リミッタ)で合成する(打ち上げ/開花のいずれも単発で完結)。
+   * 未起動(resume 前)は安全に no-op。
    */
   playFireworks(kind: 'launch' | 'burst'): void {
     const ctx = this.ctx

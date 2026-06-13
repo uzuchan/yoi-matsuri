@@ -20,6 +20,20 @@ export interface GameEvents {
   'goldfish:poi-torn': Record<string, never>
   'goldfish:finished': { caught: number; reason: 'torn' | 'timeout' | 'quit' }
   'sfx:play': { name: string }
+  /**
+   * 花火の打ち上げ(T-009)。発火責任は scenes/approach(視覚 = world/fireworks)、購読は audio。
+   * payload は three 非依存のプレーン型に限る(色は ART §2 の花火3色のいずれか、位置は world 座標)。
+   * 開花は launch から約 1.2s 後に fireworks:burst が続く(発火側で固定。AUDIO_SPEC §3)。
+   */
+  'fireworks:launch': {
+    color: string
+    position: { x: number; y: number; z: number }
+  }
+  /** 花火の開花(T-009)。launch と同じ shell の開花点。視覚の開花と音を同期させる。 */
+  'fireworks:burst': {
+    color: string
+    position: { x: number; y: number; z: number }
+  }
 }
 
 export type GameEventName = keyof GameEvents

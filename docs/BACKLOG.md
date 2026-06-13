@@ -14,7 +14,7 @@
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | COMPLETE |
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | COMPLETE |
 | P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | COMPLETE |
-| P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer | art-director + critical-reviewer | 9 | PENDING |
+| P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer(+audio/gameplay小follow) | art-director + critical-reviewer | 9 | COMPLETE |
 | P1 | T-010 | E2E主要動線・FPS計測・品質ゲート総点検 | qa-performance-engineer | critical-reviewer | 出荷判定 | PENDING |
 | P1 | T-011 | 出荷判定(G3体験品質レビュー: art/game/audio director+critical-reviewer並列) | critical-reviewer | Lead Agent | 出荷判定 | PENDING |
 
@@ -384,4 +384,46 @@ Risks：
   (3) リミッタ不足で爆音 → DynamicsCompressor必須、マスターGainを保守的に。複数同時発火でもクリップしないか確認
   (4) ループの継ぎ目/位相唸り → ループ素材は十分長く or 連続合成。1分放置で継ぎ目が目立たないか確認
 Status：COMPLETE(2026-06-14、ループ1。レビュー: critical-reviewer=APPROVE(REV-T-008-1)。AudioEngine+効果音15種+環境音3層(虫/群衆/祭囃子)+ミックス、Web Audioのみ・依存追加なし(D-004)、autoplay対応・DynamicsCompressorリミッタ、計231テスト(offline16skip)・e2e console error0。要対応: prompt/footstepはscenes/approach未発火(T-009)、fireworks:*はGameEvents未定義(T-009))
+```
+
+---
+
+## T-009 詳細タスクカード(9番目の実装タスク — 夏祭りの夜の仕上げ)
+
+VS要件9の総仕上げ。未実装の**花火**(視覚+音)を入れ、群衆の揺れ・歩行ボブ・歩行音/プロンプト音の発火・結果画面の店主視認性を磨き、「提灯・花火・祭囃子・群衆・虫の声で夏祭りの夜を感じられる」を完成させる。
+
+```
+Task ID：T-009
+Owner：environment-engineer(主) / 小follow: audio-director(花火音購読有効化) + gameplay-engineer(result店主オフセット)
+Reviewer：art-director(視覚) + critical-reviewer(総合)
+Goal：花火(打ち上げ→開花→残光)を夜空に上げ音と同期させ、群衆をゆっくり揺らし、歩行にカメラボブと足音・近接プロンプト音を付け、結果画面で店主が読める構図にする。夏祭りの夜の没入を完成させる
+User Story：プレイヤーとして、参道を歩くと足音が鳴り、夜空に花火が上がって音が響き、群衆がそこにいて、夏祭りの夜に包まれたい(VS要件9の総仕上げ)
+Inputs：docs/ART_DIRECTION.md(§3造形=花火パーティクル(1発120〜200粒・加算合成・重力落下+減衰・寿命1.8s・打ち上げ筋→開花→残光、群衆ゆっくり揺れ)・§2パレット(花火基本3色#ff6b9d/#ffd166/#4ecdc4)・§4ライティング(影なし)・§6性能(動的ライト6灯/三角形50k)), docs/GAME_DESIGN_DOCUMENT.md(§2 30〜45秒間隔で花火・ゲームプレイ影響なし), docs/INTERACTION_SPEC.md(§3.1 歩行ボブ=カメラ上下±0.03m・足音、近接プロンプト=フェードイン+sfx:prompt, §4 footstep 0.45s間隔), docs/AUDIO_SPEC.md(§3花火音 launch/burst, §4 prompt/footstep), reports/CURRENT_STATUS.md(§0-7 T-007店主オフセットMinor, §0-8 prompt/footstep未発火・fireworks未定義)
+Editable Files：
+  - 【environment-engineer】natsumatsuri-interactive/src/world/(fireworks.ts 新規=パーティクル花火、crowd.tsに揺れ追加)、src/scenes/approach/ApproachScene.ts(花火タイマー+fireworks:launch/burst発火、歩行ボブ、footstep(0.45s間隔)/prompt(近接enter時)のsfx:play発火、群衆揺れのupdate駆動)、src/core/EventBus.ts(**GameEventsに fireworks:launch/burst の2型を追加=Lead承認の最小スコープ例外。花火イベントの発火責任はapproach、購読はaudio**)、tests/
+  - 【audio-director・別follow】natsumatsuri-interactive/src/audio/(AudioEngineのfireworks:launch/burst購読を有効化。合成関数は実装済み)
+  - 【gameplay-engineer・別follow】natsumatsuri-interactive/src/scenes/result/ResultScene.ts(result専用カメラの注視点を調整し店主がパネル背後に完全に隠れない=横へ5〜10%オフセット。art-director Minor)
+  - reports/screenshots/T-009-festival.png(花火が上がっている参道)
+Forbidden Changes：
+  - 他エージェント所有の実装(environment-engineerはgame/ui/audio/scenes-goldfish/scenes-dialogue/scenes-result不可、audio-directorはaudio以外不可、gameplay-engineerはscenes/result以外不可)、_parallel-r3f/, docs/(ART/GDD/AUDIO/INTERACTIONは読むのみ。仕様変更は所有者へ報告), package.json(依存追加禁止), 設定ファイル, git commit/push
+  - core/EventBus.tsはfireworks 2型の追加のみ(他のcore変更禁止)。スコープ外: 追加屋台、新規ゲーム機構
+Acceptance Criteria：
+  AC1. 花火: 夜空にART §3どおりのパーティクル花火(1発120〜200粒・加算合成・重力落下+減衰・寿命約1.8s・打ち上げ筋→開花→残光の3段階、色は#ff6b9d/#ffd166/#4ecdc4)。GDD §2の間隔(30〜45秒。ただしVSデモ視認性のため初回は早め(〜10s)に1発上げてよい)で打ち上がる
+  AC2. 花火と音の同期: 打ち上げで fireworks:launch、開花(打ち上げ約1.2s後)で fireworks:burst を発火。audio-director follow でAudioEngineがこれを購読し打ち上げホイッスル/開花音を鳴らす(視覚の開花と音が同期)
+  AC3. 群衆の揺れ: 群衆(InstancedMesh)がゆっくり揺れる(±数度、提灯と同様のupdate駆動。歩行アニメは不要)。静止して見えない
+  AC4. 歩行ボブ+足音: プレイヤー移動中にカメラが上下±0.03m程度ボブし、0.45s間隔で footstep を sfx:play 発火(INTERACTION_SPEC §3.1/§4)。停止中は鳴らさない
+  AC5. 近接プロンプト音: 屋台近接圏に入った瞬間に prompt を sfx:play 発火(stall:approach と同時。INTERACTION_SPEC §3.1)。圏内滞在中の連続発火なし
+  AC6. 結果画面の店主視認性(gameplay follow): result専用カメラで店主シルエットがパネル背後に完全に隠れず、横にずれて見える(art-director Minor解消)
+  AC7. 性能: 花火パーティクル追加後も実GPUで通常プレイFPS50以上、三角形50k以内、動的ライト6灯以内(花火は加算合成パーティクルで原則ライトを増やさない)。フレーム毎の過剰アロケーションを避ける(パーティクルはバッファ再利用/プール)
+  AC8. パレット遵守(art-director): 花火3色がART §2内、夜の寒色×暖色の対比を壊さない。加算合成で夜空に映える
+  AC9. 品質ゲートG1全通過(typecheck/lint/test/build)+E2E(既存動線が通り、花火/音追加でconsole error0)。新規依存なし。TODO/ダミーなし
+  AC10. reports/screenshots/T-009-festival.png に花火が開花している参道の画を保存。実GPU FPS実測(計測コマンド明記)
+Tests：花火の軌道/寿命・群衆揺れ・歩行ボブ/footstep間隔の純TS部分のunit test。コマンド: typecheck && lint && test && build && test:e2e
+Evidence：4ゲート+e2e、reports/screenshots/T-009-festival.png(花火開花)、FPS実測+計測コマンド、花火と音の同期確認、footstep/prompt発火確認
+Risks：
+  (1) パーティクルでFPS低下/三角形超過 → Points(加算ブレンド)で1発120〜200粒に抑え、プールで再利用。50k/50fps厳守
+  (2) 花火イベント(core追加)と音購読のタイミングずれ → launch→1.2s→burstを発火側で固定、audioは即時再生
+  (3) 歩行ボブが酔う → ±0.03m厳守、移動中のみ。停止で減衰
+  (4) 3エージェントの編集衝突 → ファイル所有を分離(environment=world/approach/core2型, audio=audio, gameplay=scenes/result)。Lead が逐次実行で競合回避
+Status：COMPLETE(2026-06-14、ループ1。3エージェント: environment(花火視覚+launch/burstイベント+core2型・群衆揺れ・歩行ボブ・footstep/prompt発火) / audio(花火音購読) / gameplay(result店主オフセット)。レビュー: critical-reviewer=APPROVE(REV-T-009-1) + art-director=条件付き合格(出荷可、ART v1.1)。計265テスト・e2e10・実GPU FPS120・三角形増加なし。Minor: 花火開花の白飛び→T-011任意)
 ```

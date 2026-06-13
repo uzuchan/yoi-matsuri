@@ -1,4 +1,4 @@
-import { CapsuleGeometry, Group, InstancedMesh, MeshBasicMaterial, Object3D } from 'three'
+import { CapsuleGeometry, Group, InstancedMesh, MeshBasicMaterial, Object3D, Vector3 } from 'three'
 import { APPROACH, jitterRange, PALETTE } from './palette'
 import type { WorldObject } from './types'
 
@@ -6,6 +6,12 @@ import type { WorldObject } from './types'
 const CROWD_COUNT = 18 // 15〜20 の範囲内
 const HEIGHT_MIN = 1.5
 const HEIGHT_MAX = 1.8
+
+// ART §3 群衆の揺れ: 「ゆっくり揺れる」(±数度、歩行アニメは不要)。提灯と同様の index ベース
+// 決定論的位相で、足元を支点にわずかに前後へ傾く(立っている人の重心移動)。
+const SWAY_AMPLITUDE_RAD = (3 * Math.PI) / 180 // ±3°(±数度)
+const SWAY_PERIOD_MIN = 4 // s(ゆっくり)
+const SWAY_PERIOD_MAX = 7 // s
 
 /**
  * 群衆シルエット色(ループ2 修正②)。
@@ -50,10 +56,23 @@ export function computeCrowdPlacements(): CrowdPlacement[] {
 }
 
 /**
+ * index 番目の群衆の揺れ角(ラジアン)を時刻から決定論的に返す(純TS・テスト可能)。
+ * 提灯と同様、index ベースの位相・周期で ±SWAY_AMPLITUDE_RAD(±数度)をサイン揺らす。
+ * 群衆は立っているので、足元を支点に前後へゆっくり傾く重心移動として使う。
+ */
+export function crowdSwayAngle(index: number, timeSec: number): number {
+  const phase = jitterRange(index, 0, Math.PI * 2, 21)
+  const period = jitterRange(index, SWAY_PERIOD_MIN, SWAY_PERIOD_MAX, 22)
+  const omega = (Math.PI * 2) / period
+  return SWAY_AMPLITUDE_RAD * Math.sin(timeSec * omega + phase)
+}
+
+/**
  * 群衆シルエットを InstancedMesh で構築する。
- * 揺れ歩行は T-009(本タスクでは静的配置)。無発光 MeshBasicMaterial で、
- * 夜の暗い前景からは僅かに分離しつつ遠方ではフォグに溶けるシルエットにする
- * (ライトの影響を受けない。色は CROWD_SILHOUETTE 参照)。
+ * 各個体は足元を支点に ±数度でゆっくり前後へ傾く(ART §3「ゆっくり揺れる」。歩行アニメは不要)。
+ * 無発光 MeshBasicMaterial で、夜の暗い前景からは僅かに分離しつつ遠方ではフォグに溶ける
+ * シルエットにする(ライトの影響を受けない。色は CROWD_SILHOUETTE 参照)。
+ * 揺れは update(dt) で instanceMatrix を毎フレーム更新する(提灯と同方式)。
  */
 export function createCrowd(): WorldObject {
   const group = new Group()
@@ -67,21 +86,52 @@ export function createCrowd(): WorldObject {
   const mesh = new InstancedMesh(geometry, material, placements.length)
   mesh.name = 'crowd-instances'
 
-  const dummy = new Object3D()
+  // 各個体の向き(静的)・揺れ軸(水平・向きに直交)・足元位置を保持し、毎フレーム書き換える。
+  const facings = new Float32Array(placements.length)
+  const scaleYs = new Float32Array(placements.length)
   for (let i = 0; i < placements.length; i++) {
-    const p = placements[i]
-    const scaleY = p.height / BASE_HEIGHT
-    dummy.position.set(p.x, p.height / 2, p.z)
-    dummy.rotation.set(0, jitterRange(i, 0, Math.PI * 2, 13), 0)
-    dummy.scale.set(1, scaleY, 1)
-    dummy.updateMatrix()
-    mesh.setMatrixAt(i, dummy.matrix)
+    facings[i] = jitterRange(i, 0, Math.PI * 2, 13)
+    scaleYs[i] = placements[i].height / BASE_HEIGHT
   }
-  mesh.instanceMatrix.needsUpdate = true
+
+  const dummy = new Object3D()
+  // 足元を支点に傾けるための回転軸(個体の向きに対して横方向 = 前後へ傾く)。
+  const tiltAxis = new Vector3()
+
+  function writeMatrices(timeSec: number): void {
+    for (let i = 0; i < placements.length; i++) {
+      const p = placements[i]
+      const lean = crowdSwayAngle(i, timeSec)
+      // 揺れ軸 = 個体の向き(facing)に対して水平横方向。向きの cos/sin から決める。
+      const fy = facings[i]
+      tiltAxis.set(Math.cos(fy), 0, Math.sin(fy)).normalize()
+      // 足元(y=0)を支点にしたいので、ピボットを足元に置いた回転を作る。
+      // 1) 足元へ移動 → 2) 横軸まわりに lean 傾ける → 3) Y向きを与える。
+      dummy.position.set(p.x, 0, p.z)
+      dummy.quaternion.setFromAxisAngle(tiltAxis, lean)
+      // 向き(Y回転)を合成。傾けてから向きを回す。
+      dummy.rotateY(fy)
+      dummy.scale.set(1, scaleYs[i], 1)
+      // カプセルの原点は中心なので、足元支点で立たせるため中心を半身ぶん上へ。
+      // 傾きで足元固定になるよう、ローカル +Y へ half をオフセットしてから回転に乗せる。
+      dummy.translateY(p.height / 2)
+      dummy.updateMatrix()
+      mesh.setMatrixAt(i, dummy.matrix)
+    }
+    mesh.instanceMatrix.needsUpdate = true
+  }
+
+  // 初期姿勢(揺れ0)。
+  writeMatrices(0)
   group.add(mesh)
 
+  let elapsed = 0
   return {
     object: group,
+    update(dt: number): void {
+      elapsed += dt
+      writeMatrices(elapsed)
+    },
     dispose(): void {
       geometry.dispose()
       material.dispose()

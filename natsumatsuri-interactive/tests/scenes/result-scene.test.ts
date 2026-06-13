@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Vector3 } from 'three'
 import { EventBus } from '../../src/core/EventBus'
 import type { GameKey, InputManager, MouseState, SceneContext } from '../../src/core'
 import { ResultScene, type ResultHudState } from '../../src/scenes/result/ResultScene'
@@ -181,7 +182,38 @@ describe('ResultScene(駆動ロジック / T-007)', () => {
     expect(cam.fov).toBe(50)
     expect(cam.position.x).toBeCloseTo(5 - 4.5, 5) // STALL_POSITION.x - 4.5(参道側)
     expect(cam.position.y).toBeCloseTo(1.8, 5)
-    expect(cam.position.z).toBeCloseTo(-26, 5) // STALL_POSITION.z
+    // T-009(art-director Minor 解消): rig を +z へ 1.8m パンし店主を画面左へ寄せる。
+    // カメラ z = 店主頭部 z(-25.7)+ パン 1.8 = -23.9(屋台中心 z=-26 から +z 側)。
+    expect(cam.position.z).toBeCloseTo(-25.7 + 1.8, 5)
+  })
+
+  it('店主頭部が中央パネル背後から左へはみ出して読める(T-009 / ART §5 構図要件・Minor 解消)', () => {
+    const { scene, events, input, renderWith } = setup()
+    enterWith(scene, events, input, 1)
+    scene.resize(1280, 720) // 実画面比でカメラの aspect を確定する
+    scene.render(0.5)
+
+    const cam = renderWith.mock.calls[0][0]
+    cam.updateMatrixWorld(true)
+    cam.updateProjectionMatrix()
+
+    // 店主頭部 world ≈ (4.5, 1.66, -25.7)(world/stall.ts: group 回転後 + 頭部 local y1.66)。
+    const headNdc = new Vector3(4.5, 1.66, -25.7).project(cam)
+    const headPx = (headNdc.x * 0.5 + 0.5) * 1280
+
+    // 画面内に居る(クリップされない)。
+    expect(headNdc.x).toBeGreaterThan(-1)
+    expect(headNdc.x).toBeLessThan(1)
+    // 中央の結果パネル(width min(560px, 100vw-48px)=1280px 時は 560px、左端 ≈ x640-280=360px)の
+    // 左外へ頭が出ること。余白を見て head が x<340px(パネル左端より左)に来ることを要求する。
+    expect(headPx).toBeLessThan(340)
+
+    // §7-4 維持: 裸電球2個(world (5,2.1,-26.9)/(5,2.1,-25.1))が引き続き画面内に残る。
+    for (const bulb of [new Vector3(5, 2.1, -26.9), new Vector3(5, 2.1, -25.1)]) {
+      const b = bulb.project(cam)
+      expect(b.x).toBeGreaterThan(-1)
+      expect(b.x).toBeLessThan(1)
+    }
   })
 
   it('resize は result 専用カメラの aspect を更新する(approach カメラは触らない / Major-2)', () => {

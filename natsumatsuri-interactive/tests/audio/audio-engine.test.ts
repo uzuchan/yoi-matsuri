@@ -69,8 +69,28 @@ describe('AudioEngine(AudioContext 無し環境での安全性)', () => {
       events.emit('stall:leave', { stallId: 'goldfish-stall' })
       events.emit('scene:transition', { from: 'approach', to: 'goldfish' })
       events.emit('scene:transition', { from: 'goldfish', to: 'result' })
+      events.emit('fireworks:launch', { color: '#ffd56b', position: { x: 0, y: 12, z: -8 } })
+      events.emit('fireworks:burst', { color: '#ffd56b', position: { x: 0, y: 18, z: -8 } })
     }).not.toThrow()
     engine.dispose()
+  })
+
+  it('fireworks:launch / fireworks:burst を購読し playFireworks へ写像する(T-009)', () => {
+    const events = new EventBus()
+    const engine = new AudioEngine()
+    const target = engine as unknown as { playFireworks: (k: 'launch' | 'burst') => void }
+    const spy = vi.spyOn(target, 'playFireworks')
+    engine.install(events)
+
+    events.emit('fireworks:launch', { color: '#ffd56b', position: { x: 1, y: 12, z: -8 } })
+    events.emit('fireworks:burst', { color: '#ffd56b', position: { x: 1, y: 18, z: -8 } })
+    expect(spy.mock.calls.map((c) => c[0])).toEqual(['launch', 'burst'])
+
+    // dispose 後は届かない(購読解除)。
+    engine.dispose()
+    events.emit('fireworks:launch', { color: '#ff5b5b', position: { x: 0, y: 12, z: -8 } })
+    expect(spy.mock.calls).toHaveLength(2)
+    spy.mockRestore()
   })
 
   it('dispose は購読を解除する(以後の発火がハンドラに届かない)', () => {
