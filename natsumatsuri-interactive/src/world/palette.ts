@@ -27,6 +27,8 @@ export const PALETTE = {
   water: '#1e4d6b',
   /** 群衆シルエット #0d1126 無発光 */
   crowd: '#0d1126',
+  /** プレイヤー胴・頭 #1b2240 寒色。群衆上限フォグ #141a38 より一段明るい固定床値(ART §2 視認性) */
+  playerBody: '#1b2240',
 } as const
 
 /** ART §4 屋台の裸電球の色 #ffd166(屋台光のPointLightと共通)。 */

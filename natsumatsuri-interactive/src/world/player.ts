@@ -3,7 +3,6 @@ import {
   Color,
   Group,
   Mesh,
-  MeshLambertMaterial,
   MeshStandardMaterial,
   SphereGeometry,
 } from 'three'
@@ -13,19 +12,19 @@ import type { WorldObject } from './types'
 /**
  * プレイヤーの最小限の可視表現。
  *
- * ART_DIRECTION にプレイヤー造形の規定が無いため(T-003 AC1: art-director 所見を仰ぐ対象)、
- * 最小・パレット整合で実装する。胴+頭の単純な人型シルエットを寒色ベースで作り、
- * 群衆(#0d1126)と同系の夜の色に寄せつつ、暗い前景地面に完全に埋もれないよう
- * 胴に小さな暖色アクセント(提灯の紙色 #ff9d45 の帯=祭りの法被/手ぬぐいを示唆)を加える。
+ * 胴+頭の単純な人型シルエットを寒色ベースで作り、暗い前景地面・群衆へ埋もれないよう
+ * ART §2「プレイヤーの視認性」に従う。胴・頭は寒色の固定床値 #1b2240(群衆の上限フォグ
+ * #141a38 より一段明るい)を照明の有無に関わらず保証し、純黒へ沈ませない。
+ * さらに胴上部に細い暖色アクセント帯(提灯の紙色 #ff9d45 の帯=祭りの法被/手ぬぐいを
+ * 示唆)を 1 本だけ加える(増やさない: §7-4 屋台前の視線誘導と競合させないため)。
  * 新規の色相は持ち込まない(すべて ART §2 パレット内)。
  *
  * 原点はプレイヤーの足元(y=0=地面)。ApproachScene が position を毎フレーム更新する。
  * 歩行アニメ(ボブ・腕振り)は T-009 のスコープ外。ここでは静的造形のみ。
  */
 
-// 群衆色を基準にしつつ、地面から最小限分離するため明度をわずかに持ち上げた寒色。
-// 色相は据え置き(フォグ色 #141a38 を上限とする群衆と同じ考え方)。
-const BODY_COLOR = new Color(PALETTE.crowd).lerp(new Color(PALETTE.fog), 0.6)
+// ART §2/§3: プレイヤー胴・頭の寒色固定床値 #1b2240。
+const BODY_COLOR = new Color(PALETTE.playerBody)
 
 // 体格(人型・身長 ~1.7m)。
 const TOTAL_HEIGHT = 1.7
@@ -38,8 +37,16 @@ export function createPlayer(): WorldObject {
   const group = new Group()
   group.name = 'player'
 
-  // 胴: 寒色のカプセル。ライティングを受けて屋台前で明るくなる。
-  const bodyMaterial = new MeshLambertMaterial({ color: BODY_COLOR })
+  // 胴・頭: 寒色のカプセル/球。
+  // ART §2: emissive #1b2240 / emissiveIntensity 1.0 を base に重ね、影域でも床値 #1b2240 を
+  // 必ず確保する(純黒へ沈ませない)。照明域(屋台前など)では base 色に加色されさらに明るくなる。
+  const bodyMaterial = new MeshStandardMaterial({
+    color: BODY_COLOR,
+    emissive: BODY_COLOR,
+    emissiveIntensity: 1.0,
+    roughness: 0.85,
+    metalness: 0,
+  })
   const torsoGeometry = new CapsuleGeometry(TORSO_RADIUS, TORSO_CYLINDER, 4, 10)
   const torso = new Mesh(torsoGeometry, bodyMaterial)
   // カプセルの中心 = 円柱中心 + 端の半球。足元(y=0)から立てる。

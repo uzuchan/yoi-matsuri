@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|
 | P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | COMPLETE |
 | P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | COMPLETE |
-| P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | IN_REVIEW |
+| P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | COMPLETE |
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer | critical-reviewer | 3 | PENDING |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | PENDING |
@@ -150,5 +150,5 @@ Risks：
   (2) 追従カメラのlagでカメラ酔い/遅延過大 → lag0.15sを厳守、実機で確認
   (3) プロンプトのワールド空間ラベルがフォグで沈む/常に正面を向かない → Spriteは常時カメラ向き、fog:falseで視認性確保。最終設定を報告
   (4) プレイヤー造形がART未規定 → 最小・パレット整合で実装し、art-directorの所見を仰ぐ(必要ならART §にプレイヤー項を追記する別タスク化)
-Status：IN_REVIEW(2026-06-13 実装・実装者自己検証完了=unit test 82件/build成功/実GPU FPS120。ただしR3F並行実装の混入ブロッカーで一時中断 → 系統Bを_parallel-r3f/へ退避し系統A復元済み。critical-reviewerレビューはアーキ方針確定後に実施)
+Status：COMPLETE(2026-06-13、ループ2で完了。ループ1で実装・自己検証→R3F混入ブロッカーで中断→系統B退避・系統A復元→ループ2でプレイヤー視認性をart-director指摘どおり修正。レビュー: critical-reviewer=APPROVE / art-director=条件付き合格の指摘を解消。reports/reviews/REV-T-003-1.md。unit test 82件・実GPU FPS120)
 ```
