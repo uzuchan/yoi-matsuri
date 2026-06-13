@@ -10,7 +10,7 @@
 | P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | COMPLETE |
 | P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | COMPLETE |
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer(+technical-architectが基盤) | critical-reviewer + interaction-designer | 3 | COMPLETE |
-| P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer | 4, 5, 6 | PENDING |
+| P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer + game-director | 4, 5, 6 | COMPLETE |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | PENDING |
 | P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | PENDING |
@@ -211,4 +211,43 @@ Risks：
   (3) React HUDとSceneManager状態の同期ズレ → EventBus単一経路で駆動、HudRootは購読のみ
   (4) 1文字送りのタイマーリーク → DialogueScene/コンポーネントのcleanupで解除
 Status：COMPLETE(2026-06-13。段A基盤=technical-architect(f3a87b4)→段B実装=gameplay-engineer→ループ2でMajor2件(キーボードSFX/選択の二重遷移)+Minor(プロンプト残留)を修正。レビュー: critical-reviewer=APPROVE(REV-T-004-1差し戻し→REV-T-004-2解消確認) + interaction-designer=条件付き合格の指摘を解消。test110件/e2e6件。T-006でApp.routeChoiceのgoldfish未登録フォールバックtry/catchを本遷移に差し替える)
+```
+
+---
+
+## T-005 詳細タスクカード(5番目の実装タスク — ゲームの核心ロジック)
+
+VS要件4「金魚すくいを遊べる」・5「ポイの移動速度・水の抵抗・紙の耐久値が結果に影響する」・6「金魚をすくうか、ポイが破れて失敗する」の**ロジック部分**。描画(水槽・ポイ・金魚・HUD)はT-006。本タスクは純TSのドメインロジックとunit testに限定する(D-003)。
+
+```
+Task ID：T-005
+Owner：gameplay-engineer
+Reviewer：critical-reviewer(総合) + game-director(手触り・バランス所見)
+Goal：金魚すくいの物理・判定・金魚AI・セッション進行を、three/react/DOM非依存の純TSで実装し、unit testで「ポイ速度・水の抵抗・紙耐久が結果に影響する」「すくう/破れる」を固定する。T-006(描画)が状態を読んで描けるAPIを提供する
+User Story：プレイヤーとして、ポイをそっと動かせば長持ちし速く動かすと破れる緊張感の中で金魚をすくいたい(VS要件4・5・6)
+Inputs：docs/GAME_DESIGN_DOCUMENT.md(§4 全体, 特に §4.3 物理パラメータ表=変数名・初期値・単位の正, §4.4 ルール, §4.5 金魚AI, §5 HUDが必要とする値), docs/TECHNICAL_ARCHITECTURE.md(§2 game/はthree/react import禁止・Vitestで完全テスト可能に, §3 GameEvents goldfish:caught/poi-torn/finished), docs/AUDIO_SPEC.md §4(catch/secure/fish-escape/paper-warning/paper-tear の発火タイミング=ロジックが状態変化として表現), docs/DECISION_LOG.md D-003
+Editable Files：
+  - natsumatsuri-interactive/src/game/goldfish/(params.ts=全パラメータ一元管理, poi.ts, fish.ts, session.ts, index.ts 等。純TS・three/react/DOM import禁止)
+  - natsumatsuri-interactive/tests/game/(goldfishロジックのunit test)
+Forbidden Changes：
+  - src/scenes/goldfish/(描画はT-006), src/scenes/*, src/world/, src/ui/, src/audio/, src/core/(GameEvents追加が必要なら報告), src/App.tsx, _parallel-r3f/, docs/**, package.json, 設定ファイル
+  - three/react/DOM の import(game/はlintで禁止)。新規依存追加。git commit/push
+  - スコープ外: 描画・HUDコンポーネント(T-006)、音の実装(T-008。本タスクは状態/イベントの表現まで)、追加屋台
+Acceptance Criteria：
+  AC1. src/game/goldfish/params.ts に GDD §4.3 の全パラメータ(poiFollowLag, waterDragFactor, paperDurability, wetDamagePerSec, speedDamageCoeff, fishWeightDamage, liftSpeedMax, fishEscapeRadius, fishCruiseSpeed, fishFleeSpeed, sessionTimeLimit, fishCount, poiRadius, dipDepth)を変数名・初期値どおり定義し一元管理する(他モジュールはここを参照、値の分散ハードコード禁止)
+  AC2. ポイ物理: カーソル目標位置への慣性追従(空中=時定数poiFollowLag、水中=poiFollowLag×waterDragFactor)。submerge(沈める)/lift(持ち上げ)状態を持つ。dtベースでフレームレート非依存
+  AC3. 紙耐久: 水中滞在で wetDamagePerSec/s、水中移動で speedDamageCoeff×speed²/s のダメージ、金魚を載せて持ち上げた瞬間 fishWeightDamage。耐久0でポイ破損(status=torn)。「速く動かすと一気に破れる/そっと動かせば長持ち」がspeed²項で成立すること
+  AC4. すくい判定(GDD §4.5): ポイ持ち上げ時、金魚中心がポイ円内(poiRadius)かつポイ水平速度≤liftSpeedMax で捕獲。速度超過なら金魚は逃げ捕獲失敗(耐久ダメージ無し)。お椀へ確保(secure)で確保数が増える
+  AC5. 金魚AI(GDD §4.5): 通常はwander(fishCruiseSpeed)、水中のポイがfishEscapeRadius内に来るとポイと逆方向へfishFleeSpeed(0.8s持続)。水槽境界で滑らかに転回。乱数は決定論的シード(再現可能・テスト可能。core/rng非依存でgame内に閉じたseeded PRNG可)
+  AC6. セッション進行(session.ts): sessionTimeLimit のカウントダウン、捕獲/確保数の記録、status遷移(playing→won/torn/timeout)。耐久0でtorn即終了、時間切れでtimeout、退出(quit)も表現。update(dt, input)の単一APIで進行(input=目標位置・submerge・secure等)。T-006が状態を読めるよう公開状態(ポイ位置/耐久/金魚配列/確保数/残時間/status)を提供
+  AC7. 状態変化の表現: 捕獲成立・確保・金魚逃げ・耐久警告(残30以下、初回)・破損 を、T-006/音響が拾えるよう戻り値かイベント記述子で表現する(本タスクではEventBus発火配線はせず、状態/イベント記述子の生成まで。GameEvents goldfish:caught/poi-torn/finished に対応する情報を持つ)
+  AC8. 純TS・テスト可能: three/react/DOMを一切importしない。update(dt,input)は副作用が状態に閉じる。unit testで以下を必ず実証: (a)速いポイ移動が遅い移動より早く耐久を失い破損に至る(speed²の影響)(b)水中の追従が空中よりwaterDragFactor倍遅い(c)liftSpeedMax以下で捕獲成立・超過で失敗(d)耐久0でtorn・時間切れでtimeout(e)金魚がfishEscapeRadiusで逃げる(f)パラメータを変えると結果が変わる(値が結果に影響することの証明)
+  AC9. 品質ゲートG1全通過(typecheck/lint/test/build)。新規依存なし。TODO/ダミーなし。テスト件数と各AC対応を報告
+Tests：tests/game/goldfish/ に poi(物理・耐久)、fish(AI・逃避)、session(進行・status・捕獲/確保)、params影響(AC8)のunit test。コマンド: npm run typecheck && lint && test && build
+Evidence：4ゲート結果、テスト件数、AC8の各実証テスト名と結果、公開APIの型シグネチャ(T-006への引き継ぎ)
+Risks：
+  (1) 物理の数値が体感と乖離 → GDD §4.3初期値を厳守。game-directorが手触り所見。バランス調整はGDD更新→params反映の順(コード直接調整禁止)
+  (2) 金魚AIの乱数で非決定論化しテスト不能 → seeded PRNGで決定論化(seedを注入可能に)
+  (3) speed²ダメージの単位/スケール誤り → speed[m/s]²×coeff[pt·s²/m²]=pt/s の次元を合わせ、テストで「1m/sで〜pt/s」を固定
+Status：COMPLETE(2026-06-14、ループ1。レビュー: critical-reviewer=APPROVE(REV-T-005-1) + game-director=合格。設計判断を裁定しGDD v1.1へ反映=複数同時捕獲可・結果数=secured基準・§4.6手触り指針。新規52テスト/計162件。公開API: GoldfishSession.update(dt,input)→GoldfishEvent[] + snapshot()。T-006が描画/HUD/EventBus発火を担う)
 ```
