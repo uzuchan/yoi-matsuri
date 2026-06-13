@@ -15,7 +15,7 @@
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | COMPLETE |
 | P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | COMPLETE |
 | P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer(+audio/gameplay小follow) | art-director + critical-reviewer | 9 | COMPLETE |
-| P1 | T-010 | E2E主要動線・FPS計測・品質ゲート総点検 | qa-performance-engineer | critical-reviewer | 出荷判定 | PENDING |
+| P1 | T-010 | E2E主要動線・FPS計測・品質ゲート総点検 | qa-performance-engineer | critical-reviewer | 出荷判定 | COMPLETE |
 | P1 | T-011 | 出荷判定(G3体験品質レビュー: art/game/audio director+critical-reviewer並列) | critical-reviewer | Lead Agent | 出荷判定 | PENDING |
 
 注:
@@ -426,4 +426,45 @@ Risks：
   (3) 歩行ボブが酔う → ±0.03m厳守、移動中のみ。停止で減衰
   (4) 3エージェントの編集衝突 → ファイル所有を分離(environment=world/approach/core2型, audio=audio, gameplay=scenes/result)。Lead が逐次実行で競合回避
 Status：COMPLETE(2026-06-14、ループ1。3エージェント: environment(花火視覚+launch/burstイベント+core2型・群衆揺れ・歩行ボブ・footstep/prompt発火) / audio(花火音購読) / gameplay(result店主オフセット)。レビュー: critical-reviewer=APPROVE(REV-T-009-1) + art-director=条件付き合格(出荷可、ART v1.1)。計265テスト・e2e10・実GPU FPS120・三角形増加なし。Minor: 花火開花の白飛び→T-011任意)
+```
+
+---
+
+## T-010 詳細タスクカード(10番目 — 品質ゲート総点検)
+
+Vertical Slice(要件1〜9)実装完了を受け、QUALITY_GATESの全項目を体系的に検証し記録する。コードは修正しない(問題はバグ起票して実装エージェントへ差し戻し)。
+
+```
+Task ID：T-010
+Owner：qa-performance-engineer
+Reviewer：critical-reviewer
+Goal：QUALITY_GATES.md の G1/G2 全項目を自分で計測・検証し、合否をreports/qa/に記録する。主要動線のE2E安定性、実GPU FPS、コンソールエラー、両入力経路、フィードバックを確認し、不合格はバグ起票する
+User Story：チームとして、出荷判定(T-011)の前に客観的な品質計測の証跡が欲しい。なぜなら主観レビュー(G3)の前に機械的基準(G1/G2)を満たしている確証が要るから
+Inputs：docs/QUALITY_GATES.md(G1全項目, G2全項目, G4禁止事項, 計測環境), docs/INTERACTION_SPEC.md(§3 各操作とフィードバックの突合用), docs/TECHNICAL_ARCHITECTURE.md §4(性能予算), reports/CURRENT_STATUS.md(各タスクの実測値)
+Editable Files：
+  - natsumatsuri-interactive/e2e/(主要動線E2Eの拡充・安定化。フレーキー対策)
+  - natsumatsuri-interactive/tests/(回帰テストの穴埋め=必要時)
+  - reports/qa/(計測結果・品質ゲート合否表・FPSログ)、reports/qa/bugs/(バグ起票)
+  - docs/QUALITY_GATES.md(計測手順の明確化・実測値の追記が必要な場合)
+Forbidden Changes：
+  - src/**(プロダクションコードは修正しない。バグはreports/qa/bugs/へ起票し実装エージェントへ差し戻す)
+  - 設定ファイル(playwright.config等の変更が要ればtechnical-architectへ依頼), 他docs, _parallel-r3f/, package.json, git commit/push
+Acceptance Criteria：
+  AC1. G1全項目を自分で実行し合否記録: G1-1 typecheck エラー0 / G1-2 lint エラー0(warning10以下) / G1-3 test 全件成功 / G1-4 build成功・gzip500KB以下(実測値記録)
+  AC2. G2-1 E2E主要動線: 起動→参道移動→会話開始→金魚すくい→結果→参道復帰 を1本の通しE2Eで検証(既存e2eで動線が分散していれば統合 or 通しスペック追加)。安定して成功(フレーキーでない=複数回連続成功を確認)
+  AC3. G2-2 コンソールエラー: E2E実行中の console error / pageerror が重大0件
+  AC4. G2-3 FPS: build+previewで実GPU(GPU有効フラグ明記)、approach歩行時とgoldfishプレイ時の両方を10秒サンプリングし平均50以上・下位10%が45以上を実測記録。計測条件(GL renderer, フラグ, サンプル数)を明記
+  AC5. G2-4 入力経路: 主要操作がマウスのみ・キーボードのみの両方で完結することをE2E or 手動で確認(会話・金魚すくい・結果)
+  AC6. G2-5 フィードバック: INTERACTION_SPEC §3の各操作に視覚または音響フィードバックがあることを表で突合(操作→フィードバック→実装確認)。フィードバック無しの操作が無いこと
+  AC7. G4禁止事項チェック: TODO/FIXMEの残存(grep全体)、ダミー/未接続、未承認依存、スコープ外機能、テスト失敗残置 を全項目チェックし結果記録
+  AC8. 品質ゲート合否表を reports/qa/QUALITY_REPORT.md に作成(各ゲート番号・基準・計測値・合否・証跡)。不合格項目はすべて reports/qa/bugs/ にバグ起票(症状/再現/期待/実測/影響ファイル推定/重要度)
+  AC9. バンドル内訳・性能予算(三角形/draw call/動的ライト)も実測し予算内か記録(TECHNICAL_ARCHITECTURE §4)
+  AC10. 自分でコードを修正していないこと(src/無変更)。発見した不具合はバグ起票のみ。E2E/QA成果物のみ追加
+Tests：通し主要動線E2E(e2e/main-flow.spec.ts 等)。コマンド: 全ゲート(typecheck/lint/test/build/test:e2e)+FPS計測スクリプト
+Evidence：全ゲートの実行ログ、reports/qa/QUALITY_REPORT.md(合否表)、FPSログ(approach/goldfish、計測条件込み)、バグ起票一覧(あれば)
+Risks：
+  (1) E2EのフレークでG2-1不安定 → リトライ/明示的待機で安定化(プロダクションコードは触らない)。安定しない根本原因はバグ起票
+  (2) headless SwiftShaderでFPSが出ない → GPU有効フラグ必須(既知。T-002以降の計測条件踏襲)
+  (3) フィードバック突合で抜け発見 → バグ起票(prompt/footstep等は実装済みのはず。要確認)
+Status：COMPLETE(2026-06-14、ループ1。G1/G2全項目合格・バグ0件。通しE2E main-flow.spec.ts追加(全11件・複数回安定)。実GPU FPS=approach平均116/p10 85・goldfish平均119.5/p10 118。gzip209KB・三角形approach14.4k/goldfish2.8k・draw call72-75/33・動的ライト5灯。フィードバック突合抜けなし・G4禁止事項クリア。reports/qa/QUALITY_REPORT.md。T-010レビューはT-011のcritical-reviewer総合判定が兼ねる)
 ```
