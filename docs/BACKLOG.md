@@ -16,12 +16,23 @@
 | P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | COMPLETE |
 | P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer(+audio/gameplay小follow) | art-director + critical-reviewer | 9 | COMPLETE |
 | P1 | T-010 | E2E主要動線・FPS計測・品質ゲート総点検 | qa-performance-engineer | critical-reviewer | 出荷判定 | COMPLETE |
-| P1 | T-011 | 出荷判定(G3体験品質レビュー: art/game/audio director+critical-reviewer並列) | critical-reviewer | Lead Agent | 出荷判定 | PENDING |
+| P1 | T-011 | 出荷判定(G3体験品質レビュー: art/game/audio director+critical-reviewer並列) | critical-reviewer | Lead Agent | 出荷判定 | COMPLETE |
 
 注:
 - T-002〜T-009の各タスクカードは、直前タスクのCOMPLETE後にexecutive-producerが詳細化する(インターフェースが確定してから書く)
 - T-005とT-006を分けるのは、物理ロジック(unit test対象)と描画統合を別レビューにするため。Ownerは同一なのでファイル競合なし
 - 音響(T-008)は各操作イベントが出揃った後に一括実装する。それまでのタスクはEventBusへのイベント発火だけを実装しておく(AUDIO_SPECのイベント表が契約)
+
+## 出荷後フォローアップ(Vertical Slice完成後・P2。VS出荷をブロックしない)
+
+| Task ID | 内容 | 根拠 | 優先 |
+|---|---|---|---|
+| F-001 | 金魚すくいの難度バランス調整(大成功が容易すぎる) | T-011 G3-3 / GDD §6.1。空中接近で逃避が立たない・空中運搬で無ダメージ・時間に余裕、で平均5匹超。GDD §6.1の方針(A仕様追加=確保/運搬に水中接触要求 / B金魚AI / C暫定数値 liftSpeedMax0.35→0.20等)から選択。複数同時捕獲のunit test追加も | P2 |
+| F-002 | 花火開花の白飛び低減(色相可読性) | T-009/T-011 art-director Minor。粒サイズ/ピーク輝度の微調整 | P3 |
+| F-003 | GameLoopコールバック例外のtry/catch(堅牢性) | T-001 M-3 / T-010所見。正常系非発火だが堅牢性向上 | P3 |
+| F-004 | result店主シルエットの背景分離強化(任意) | T-007/T-009 art-director Minor。keeperMaterialの明度持ち上げ等 | P3 |
+
+---
 
 ## Icebox(Vertical Slice完成まで起票禁止)
 
@@ -467,4 +478,38 @@ Risks：
   (2) headless SwiftShaderでFPSが出ない → GPU有効フラグ必須(既知。T-002以降の計測条件踏襲)
   (3) フィードバック突合で抜け発見 → バグ起票(prompt/footstep等は実装済みのはず。要確認)
 Status：COMPLETE(2026-06-14、ループ1。G1/G2全項目合格・バグ0件。通しE2E main-flow.spec.ts追加(全11件・複数回安定)。実GPU FPS=approach平均116/p10 85・goldfish平均119.5/p10 118。gzip209KB・三角形approach14.4k/goldfish2.8k・draw call72-75/33・動的ライト5灯。フィードバック突合抜けなし・G4禁止事項クリア。reports/qa/QUALITY_REPORT.md。T-010レビューはT-011のcritical-reviewer総合判定が兼ねる)
+```
+
+---
+
+## T-011 詳細タスクカード(最終 — 出荷判定)
+
+Vertical Slice(要件1〜9)実装+G1/G2(T-010)合格を受け、QUALITY_GATES G3(体験品質)を4レビュアー並列で判定し、Lead Agentが出荷可否を最終決定する。実装はしない(判定のみ。重大な問題が出たら差し戻し)。
+
+```
+Task ID：T-011
+Owner：critical-reviewer(総合判定の取りまとめ) / 並列判定: art-director(G3-1) + game-director(G3-3,G3-4) + audio-director(G3-2)
+Reviewer：Lead Agent(最終出荷判断)
+Goal：完成したVertical Sliceに対しG3体験品質(視覚統一感・音響統一感・手触り・物語・総合)を判定し、出荷可否をLeadが決める
+Inputs：docs/QUALITY_GATES.md(G3全項目), docs/PRODUCT_VISION.md(体験目標), 各仕様(GDD/ART/AUDIO/INTERACTION), reports/qa/QUALITY_REPORT.md(G1/G2結果), reports/screenshots/(全シーン), reports/reviews/(各タスクのレビュー), git log(T-001〜T-010)
+判定項目(QUALITY_GATES G3):
+  - G3-1 視覚統一感(art-director): ART §7の4基準すべて合格(approach花火込み/goldfish/dialogue/result)
+  - G3-2 音響統一感(audio-director): AUDIO_SPEC §6の3項目+「夏祭りの夜に聞こえるか」
+  - G3-3 手触り(game-director): ポイ速度・水の抵抗・紙耐久が結果に影響することを確認(要件5)
+  - G3-4 物語(game-director): 会話開始→結果別の店主反応→報酬が動作(要件3・7)
+  - G3-5 総合(critical-reviewer): 重大問題(Critical/Major)なし。全タスクのレビュー指摘がクローズ済み、品質ゲート全通過
+Editable Files：reports/reviews/(critical-reviewerの最終判定 REV-T-011-1.md)。各director は自分の所有docへ所見追記可だが、判定は最終メッセージで返す
+Forbidden Changes：src/**(判定のみ。重大問題は差し戻し起票)、_parallel-r3f/, package.json, 設定ファイル, git commit/push
+Acceptance Criteria(=出荷条件)：
+  AC1. G3-1 art-director が視覚統一感を合格判定(残Minor=花火白飛び/店主コントラストは出荷ブロックか明示)
+  AC2. G3-2 audio-director が音響統一感を合格判定(リミッタ・ループ継ぎ目・夏祭りらしさ)
+  AC3. G3-3 game-director が手触りを合格判定(ポイ速度/水抵抗/紙耐久が結果に影響=要件5)
+  AC4. G3-4 game-director が物語を合格判定(会話→結果反応→報酬=要件3・7)
+  AC5. G3-5 critical-reviewer が総合で重大問題なしと判定し、全品質ゲート(G1/G2/G3)通過を確認、REV-T-011-1.mdに出荷判定を記録
+  AC6. Lead Agentが4判定を統合し出荷可否を決定。可ならVertical Slice完成宣言、不可なら差し戻しタスク化
+Evidence：各directorのG3判定、reports/reviews/REV-T-011-1.md、品質ゲート最終合否表
+Risks：
+  (1) G3で重大な体験問題が判明 → 差し戻しタスク化(出荷保留)
+  (2) Minorの扱いで判定が割れる → Leadが出荷ブロックか否かを最終裁定
+Status：COMPLETE(2026-06-14。G3全項目判定: G3-1 art-director=合格 / G3-2 audio-director=合格 / G3-3 game-director=条件付き合格(難度緩いが要件5の核は成立) / G3-4 game-director=合格 / G3-5 critical-reviewer=APPROVE(REV-T-011-1)。**Lead最終判断: Vertical Slice出荷可**。難度バランスは出荷後P2(下記)へ)
 ```
