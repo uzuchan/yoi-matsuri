@@ -21,6 +21,19 @@ body {
   display: block;
 }
 
+/*
+ * HUD オーバーレイのルート(src/ui/HudRoot.tsx)。canvas 全面に重ねる。
+ * 既定は pointer-events: none。canvas / InputManager のマウス入力を奪わないため。
+ * 段B の会話オーバーレイ(ui/Dialogue)は自身の要素で pointer-events: auto を有効化して
+ * クリック操作を受ける(D-008: クリック経路は controller へ集約)。
+ */
+.hud-root {
+  position: fixed;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+
 /* ?debug=1 のときのみ表示されるデバッグオーバーレイ */
 .debug-overlay {
   position: fixed;

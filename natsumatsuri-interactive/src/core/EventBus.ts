@@ -1,4 +1,5 @@
 import type { SceneId } from './SceneManager'
+import type { DialogueView } from './Dialogue'
 
 /**
  * ゲーム全体の型付きイベントマップ(TECHNICAL_ARCHITECTURE §3)。
@@ -9,6 +10,12 @@ export interface GameEvents {
   'stall:approach': { stallId: string }
   'stall:leave': { stallId: string }
   'dialogue:choice': { choiceId: string }
+  /**
+   * 会話の表示状態が変化した(T-004/D-008)。DialogueScene が DialogueController の view() を
+   * 発火し、HudRoot が購読して React state へ橋渡しする(SceneManager 状態と HUD の単一経路同期)。
+   * payload はプレーンな表示状態スナップショット(three/react 非依存)。
+   */
+  'dialogue:view-changed': { view: DialogueView }
   'goldfish:caught': { total: number }
   'goldfish:poi-torn': Record<string, never>
   'goldfish:finished': { caught: number; reason: 'torn' | 'timeout' | 'quit' }

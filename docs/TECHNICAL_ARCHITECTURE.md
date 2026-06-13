@@ -20,16 +20,20 @@
 
 ```
 natsumatsuri-interactive/src/
-├── core/     # GameLoop, SceneManager, InputManager, EventBus, rng
+├── core/     # GameLoop, SceneManager, InputManager, EventBus, Dialogue(契約), rng
 ├── game/     # 純TSドメインロジック。three/react/DOMをimport禁止
-│   └── goldfish/  # params.ts(全パラメータ), poi.ts, fish.ts, session.ts
+│   ├── goldfish/  # params.ts(全パラメータ), poi.ts, fish.ts, session.ts
+│   └── dialogue/  # DialogueController実装・会話データ・状態遷移(段B/T-004。純TS)
 ├── scenes/   # SceneインターフェースのThree.js実装
 │   ├── approach/  # 参道シーン
+│   ├── dialogue/  # 会話シーン(背景はApproachScene参照を描画。DialogueController駆動・HUDへ表示イベント発火)
 │   └── goldfish/  # 金魚すくいシーン
 ├── world/    # 環境オブジェクト構築(提灯、鳥居、屋台、花火、群衆)
 ├── audio/    # AudioEngine + プロシージャル音源
-└── ui/       # Reactコンポーネント(HUD, Dialogue, Result)
+└── ui/       # Reactコンポーネント(HudRoot=EventBus→React橋渡し+オーバーレイ枠, Dialogue, Result)
 ```
+
+合成点 App.tsx(D-008): `src/App.tsx` はゲームシェル兼「合成点」。全画面canvasにWebGLRendererをマウントし、GameLoop + SceneManager を起動し、その上に React HUD(`ui/HudRoot`)を重ねる。シーンの生成・登録と依存注入(DialogueScene への ApproachScene 参照・具象 DialogueController・遷移ハンドラの束縛、HudRoot への controller 引き渡し)を行う。**合成点は機能オーナー(各機能の実装エージェント)が具象注入のため最小編集してよい**(モジュール境界の例外。配線のみ)。
 
 依存方向(逆流禁止):
 
@@ -74,13 +78,50 @@ interface GameEvents {
   'stall:approach': { stallId: string };      // 近接圏に入った
   'stall:leave': { stallId: string };
   'dialogue:choice': { choiceId: string };
+  'dialogue:view-changed': { view: DialogueView };  // 会話表示状態の更新(D-008)。DialogueScene→HudRoot
   'goldfish:caught': { total: number };
   'goldfish:poi-torn': Record<string, never>;
   'goldfish:finished': { caught: number; reason: 'torn' | 'timeout' | 'quit' };
   'sfx:play': { name: string };               // AUDIO_SPECのイベント表参照
   // 追加はこの型マップに追記(stringイベントの野放し禁止)
 }
+
+// InputManager の追跡キー(GameKey)に Enter を追加(D-008/T-004。セリフ送り・選択確定)
+
+// 会話システムの契約(D-008。src/core/Dialogue.ts)。three/react/DOM 非依存。
+// game/dialogue(段B)が DialogueController を実装、scenes/dialogue が駆動、ui/Dialogue が表示。
+interface DialogueChoice { readonly id: string; readonly label: string }
+interface DialogueView {                       // HUD描画に必要な表示状態スナップショット(プレーンデータ)
+  readonly speaker: string;
+  readonly text: string;                       // 現在セリフ全文
+  readonly visibleText: string;                // 1文字送り(~30字/s)で今見えている部分
+  readonly typing: boolean;                    // 送り中か
+  readonly choices: readonly DialogueChoice[]; // 選択肢表示中のみ非空
+  readonly focusedChoiceIndex: number;         // 選択肢のフォーカス(なければ -1)
+  readonly active: boolean;                    // 会話進行中か
+}
+type DialogueOutcome =                          // advance/confirm/abort の結末。遷移先の解釈は DialogueScene
+  | { readonly kind: 'continue' }
+  | { readonly kind: 'choice'; readonly choiceId: string }
+  | { readonly kind: 'aborted' };
+interface DialogueController {                  // 入力2経路(キーボード=Scene / クリック=HUD)の集約先
+  start(): void;
+  tick(dt: number): void;                       // 毎フレーム。タイピング進行
+  advance(): DialogueOutcome;                   // 送り/全文即時表示/次セリフ
+  moveFocus(delta: number): void;               // ±1 フォーカス移動
+  focus(index: number): void;                   // ホバーでフォーカス
+  confirm(): DialogueOutcome;                   // 選択確定
+  abort(): DialogueOutcome;                      // Esc 打ち切り(必ず aborted)
+  view(): DialogueView;
+}
 ```
+
+### モジュールAPI: 会話システム(D-008 / T-004 段A)
+
+- **`src/core/Dialogue.ts`**: 上記 `DialogueController` / `DialogueView` / `DialogueChoice` / `DialogueOutcome` を定義し core バレル(`src/core/index.ts`)から再エクスポート。段A(基盤)で確定。段Bは契約に従う(変更要は technical-architect へ依頼)。
+- **`src/scenes/dialogue/DialogueScene.ts`**(Scene 実装): コンストラクタで ApproachScene 参照と DialogueController を DI で受ける。`render(alpha)` は背景に ApproachScene.render を呼ぶ(プレイヤー非移動)。`update(dt)` は controller.tick とキーボード入力(立ち上がりエッジ)を controller へ渡し、表示状態変化を `dialogue:view-changed` で発火、結末で遷移する。遷移は `setTransitionHandler(handler)` で合成点から注入されたハンドラ経由(Scene は SceneManager を直接参照しない core 設計)。`requestGoldfish()` は goldfish 未登録時に approach へ安全フォールバック(AC5)。
+- **`src/ui/HudRoot.tsx`**: `{ events: EventBus; controller: DialogueController | null }` を受け、`dialogue:view-changed` を購読して React state へ橋渡しし、会話オーバーレイ(段B `ui/Dialogue.tsx`)をマウントする枠。controller 未注入時は何も描画しない。`DialogueProps`(段Bの Dialogue が受ける props 契約: `{ view; controller; events }`)も同ファイルで定義。
+- **`src/App.tsx`**(合成点): `{ controller?: DialogueController | null }` を prop で受ける。controller 注入時のみ DialogueScene を生成・登録・配線する。
 
 ## 4. 性能予算
 

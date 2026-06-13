@@ -55,7 +55,7 @@ describe('InputManager', () => {
     expect(input.isDown('KeyW')).toBe(false)
   })
 
-  it('WASD/矢印/E/Space/Escの全ゲームキーが追跡される', () => {
+  it('WASD/矢印/E/Space/Enter/Escの全ゲームキーが追跡される', () => {
     const { target, input } = createAttached()
 
     for (const key of GAME_KEYS) {
@@ -70,7 +70,7 @@ describe('InputManager', () => {
     const { target, input } = createAttached()
 
     target.dispatch('keydown', { code: 'KeyQ' })
-    target.dispatch('keydown', { code: 'Enter' })
+    target.dispatch('keydown', { code: 'Tab' })
 
     for (const key of GAME_KEYS) {
       expect(input.isDown(key)).toBe(false)

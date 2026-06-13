@@ -9,7 +9,7 @@
 | P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | COMPLETE |
 | P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | COMPLETE |
 | P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | COMPLETE |
-| P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer | critical-reviewer | 3 | PENDING |
+| P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer(+technical-architectが基盤) | critical-reviewer + interaction-designer | 3 | READY |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | PENDING |
@@ -151,4 +151,64 @@ Risks：
   (3) プロンプトのワールド空間ラベルがフォグで沈む/常に正面を向かない → Spriteは常時カメラ向き、fog:falseで視認性確保。最終設定を報告
   (4) プレイヤー造形がART未規定 → 最小・パレット整合で実装し、art-directorの所見を仰ぐ(必要ならART §にプレイヤー項を追記する別タスク化)
 Status：COMPLETE(2026-06-13、ループ2で完了。ループ1で実装・自己検証→R3F混入ブロッカーで中断→系統B退避・系統A復元→ループ2でプレイヤー視認性をart-director指摘どおり修正。レビュー: critical-reviewer=APPROVE / art-director=条件付き合格の指摘を解消。reports/reviews/REV-T-003-1.md。unit test 82件・実GPU FPS120)
+```
+
+---
+
+## T-004 詳細タスクカード(4番目の実装タスク — 2段構成)
+
+VS要件3「店主との短い会話を開始できる」。React HUD層と会話の3D統合という設計判断を伴うため、(A)technical-architectが基盤+アーキ決定、(B)gameplay-engineerが会話内容・UI・配線、の順で行う。
+
+### アーキテクチャ方針(D-008としてtechnical-architectが確定・記録する)
+- `dialogue` は SceneManager のシーンとして扱う(既存のALLOWED_TRANSITIONS approach→dialogue→{approach,goldfish} を活かす)
+- DialogueSceneは独自の3D世界を作らず、**注入されたApproachSceneの参照で背景に参道world(屋台・店主)を描画**する(屋台が会話中も見える)。プレイヤー移動は止める
+- 会話ボックス・選択肢は**React HUDオーバーレイ**(src/ui/)で表示し、EventBus経由で駆動する
+- 会話内容・状態遷移ロジックは three/react 非依存の純TS(src/game/dialogue/)。DialogueControllerインターフェースは core に置き(game→core / scenes→core / ui→core の依存方向を守る)、game/dialogueが実装、DialogueSceneとHudRootが利用する(DI)
+- 入力: キーボード送り/選択はDialogueSceneがInputManagerを読む、クリックはReactオーバーレイが処理し、どちらもDialogueControllerへ集約
+
+```
+Task ID：T-004
+Owner：gameplay-engineer(実装本体) / 基盤: technical-architect
+Reviewer：critical-reviewer(総合) + interaction-designer(UX所見)
+Goal：屋台の近接圏でEまたはクリックすると店主との会話が始まり、セリフ送り・選択肢(「遊んでいく」「またあとで」)で進行できる。会話中も屋台が背景に見える。選択に応じてgoldfish(遊ぶ)または approach(断る)へ遷移する
+User Story：プレイヤーとして、屋台の店主に話しかけて短い会話をしたい。なぜなら「屋台に立ち寄る」体験の核であり、金魚すくいへ入る導線だから(VS要件3)
+Inputs：docs/GAME_DESIGN_DOCUMENT.md(§3.1 初回会話の全セリフと選択肢=実装する文言の正), docs/INTERACTION_SPEC.md(§2状態遷移, §3.2 dialogue入力表=クリック/Enter/Space送り・↑↓/ホバー選択・Esc打ち切り・1文字送り30字/s, §4文言), docs/ART_DIRECTION.md(§2 UIテキスト#f5f0e8/アクセント#ff9d45・80%透過パネル), docs/TECHNICAL_ARCHITECTURE.md(§3 GameEvents/SceneManager), docs/AUDIO_SPEC.md(§4 dialogue-next/select/confirm のイベント名=発火のみ。音実装はT-008), reports/CURRENT_STATUS.md(§0-3 T-003引き継ぎ: 近接中E/クリックで transition('dialogue',{stallId:'goldfish-stall'}))
+
+【段A: technical-architect 基盤】
+Editable Files(段A)：
+  - natsumatsuri-interactive/src/core/(DialogueController/DialogueView インターフェースと会話関連の型。GameEventsに会話表示用イベントが必要なら追加=ここで承認・実装)
+  - natsumatsuri-interactive/src/scenes/dialogue/DialogueScene.ts(新規。背景にApproachScene参照を描画、InputManager読み取り、DialogueController駆動、HUDへ表示イベント発火、Esc/選択で遷移)
+  - natsumatsuri-interactive/src/ui/HudRoot.tsx(新規。EventBus→React state ブリッジ。会話オーバーレイのマウント枠)
+  - natsumatsuri-interactive/src/App.tsx(HudRootマウント、DialogueScene登録=ApproachScene参照と具象Controllerを注入する合成点)
+  - docs/DECISION_LOG.md(D-008追記), docs/TECHNICAL_ARCHITECTURE.md(§2/§3にHudRoot・scenes/dialogue・DialogueController契約・合成点としてのApp.tsxを追記)
+Forbidden Changes(段A)：src/game/, src/world/, src/scenes/approach(参照公開に最小変更が要る場合のみ、render再利用のための公開メソッド追加に限定し報告), src/audio/, _parallel-r3f/。新規依存追加(threeとReactのみ)
+
+【段B: gameplay-engineer 実装本体】
+Editable Files(段B)：
+  - natsumatsuri-interactive/src/game/dialogue/(DialogueController実装・店主会話データ=GDD §3.1の全セリフ・状態遷移。three/react import禁止の純TS)
+  - natsumatsuri-interactive/src/ui/(Dialogue.tsx 会話ボックス+選択肢コンポーネント。HudRootから描画される)
+  - natsumatsuri-interactive/src/scenes/approach/ApproachScene.ts(近接中にE/左クリックで transition('dialogue') する配線のみ。T-003が残した接続点。最小変更)
+  - natsumatsuri-interactive/src/App.tsx(具象DialogueControllerの注入1〜数行のみ)
+  - natsumatsuri-interactive/tests/game/(dialogue状態遷移のunit test)
+Forbidden Changes(段B)：src/core/(段Aで確定した契約に従う。変更要は報告), src/world/, src/audio/, scenes/dialogue/DialogueScene.ts(段Aの所有。表示イベント契約に従う), _parallel-r3f/, docs/**(仕様疑義は報告)
+
+Acceptance Criteria：
+  AC1. 屋台の近接圏(T-003のproximity)でEキーまたは左クリックすると 'dialogue' へ遷移し、会話が開始する。圏外では何も起きない
+  AC2. 会話中、背景に参道world(屋台・店主・提灯)が描画され続ける(屋台が見える)。プレイヤーは移動しない
+  AC3. 店主のセリフがGDD §3.1の文言どおりに表示される(「おう、いらっしゃい!…」「ポイは一枚。破れたら…」)。1文字ずつ送り(約30字/s)、送り中の入力で全文即時表示(INTERACTION_SPEC §3.2)
+  AC4. クリック/Enter/Spaceでセリフ送り。最後に選択肢「遊んでいく」「またあとで」を表示。↑↓またはマウスホバーでフォーカス移動、Enter/クリックで確定(マウスのみ・キーボードのみ両方で操作完結)
+  AC5. 「遊んでいく」→ goldfish へ遷移(※goldfishシーンはT-005/006で未実装のため、遷移要求の発火=transition呼び出しまでを実装し、未登録シーンへの遷移はSceneManagerがthrowする。T-004ではgoldfish遷移を安全に扱う: goldfish未登録時はコンソール例外を出さずプレースホルダではなく『この先はT-005/006』をコードコメントで明記し、暫定で approach へ戻すか dialogue を閉じる。ダミーのgoldfish画面は作らない)。「またあとで」→ 店主「おう、また来な!」表示後 approach へ戻る
+  AC6. Escで会話を打ち切り approach へ戻る(INTERACTION_SPEC §3.2)。どの状態からも参道へ戻れる(行き止まりなし)
+  AC7. 各操作で音響イベントを発火する(AUDIO_SPEC §4: dialogue-next/select/confirm を 'sfx:play' で。音そのものはT-008。発火のみ実装)
+  AC8. UIはART §2準拠(テキスト#f5f0e8、選択フォーカス#ff9d45、80%透過パネル)。テキスト16px以上、フォーカスリング表示(INTERACTION_SPEC §5)
+  AC9. 会話状態遷移ロジックが純TS(game/dialogue)でunit test化(開始→セリフ送り→選択肢→各分岐、Esc打ち切り)
+  AC10. 品質ゲートG1全通過(typecheck/lint/test/build)。E2E(test:e2e)で「近接→E→会話開始→送り→『またあとで』→approach復帰」が通る。新規依存なし(three/Reactのみ)。TODO/ダミー画面なし。実GPUでFPS50以上維持。reports/screenshots/T-004-dialogue.png 保存
+Tests：tests/game/dialogue.test.ts(状態遷移)、e2e/dialogue.spec.ts(近接→会話→復帰)。コマンド: npm run typecheck && lint && test && build && test:e2e
+Evidence：4ゲート+test:e2eの結果、reports/screenshots/T-004-dialogue.png、会話の全分岐を辿った確認手順、FPS実測(GPUフラグ明記)
+Risks：
+  (1) goldfishシーン未実装で遷移先がない → AC5の方針どおり安全に扱い、ダミー画面を作らない。T-005/006完了後にgoldfish遷移を有効化(T-006で結線)
+  (2) 背景world描画の共有でApproachScene/DialogueSceneの責務が混ざる → DialogueSceneはApproachSceneのrenderを呼ぶだけにし、worldの所有はApproachSceneのまま
+  (3) React HUDとSceneManager状態の同期ズレ → EventBus単一経路で駆動、HudRootは購読のみ
+  (4) 1文字送りのタイマーリーク → DialogueScene/コンポーネントのcleanupで解除
+Status：READY(段Aから着手)
 ```

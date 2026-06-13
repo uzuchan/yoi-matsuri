@@ -10,6 +10,7 @@ export type GameKey =
   | 'ArrowRight'
   | 'KeyE'
   | 'Space'
+  | 'Enter'
   | 'Escape'
 
 export const GAME_KEYS: readonly GameKey[] = [
@@ -23,6 +24,8 @@ export const GAME_KEYS: readonly GameKey[] = [
   'ArrowRight',
   'KeyE',
   'Space',
+  // 会話のセリフ送り・選択確定(INTERACTION_SPEC §3.2)。T-004(D-008)で追加。
+  'Enter',
   'Escape',
 ]
 

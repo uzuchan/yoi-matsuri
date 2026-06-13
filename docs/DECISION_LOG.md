@@ -54,3 +54,22 @@
 - **理由**: 品質基準「型エラー0件」はstrictでなければ意味が薄い。コード量が少ない今が導入の唯一の好機
 - **代替案**: 現状維持 → 却下
 - **影響**: T-001で対応。以後の全コードがstrict前提
+
+## D-008 (2026-06-13) 会話/結果オーバーレイのアーキテクチャ(T-004 基盤)
+
+- **決定**: 会話(dialogue)は以下の構成で実装する。
+  1. **dialogue は SceneManager のシーン**として扱う(既存 ALLOWED_TRANSITIONS `approach→dialogue→{approach,goldfish}` を活用)。新たな状態管理機構は足さない(D-006継承)。
+  2. **DialogueScene は独自の 3D 世界を構築しない**。注入された **ApproachScene 参照の `render(alpha)` を呼んで背景に参道world(屋台・店主・提灯)を描画**する(屋台が会話中も見える)。world の所有は ApproachScene のまま。DialogueScene は ApproachScene.update を呼ばないため、プレイヤー移動・カメラ追従は会話中停止する。
+  3. **会話ボックス・選択肢は React HUD オーバーレイ**(`src/ui/HudRoot.tsx` + 段Bの `src/ui/Dialogue.tsx`)で表示する。HUD は EventBus の `dialogue:view-changed` を購読して表示状態を React state へ橋渡しするのみ(購読専用・単一経路同期)。
+  4. **会話ロジックは three/react 非依存の純TS**(`src/game/dialogue/`、段B)。その契約 **`DialogueController` / 表示状態型 `DialogueView` を core に置く**(`src/core/Dialogue.ts`)。これにより依存方向(game→core / scenes→core / ui→core)を守ったまま game(実装)・scenes/dialogue(駆動)・ui(表示)が同じ型を共有する。注入(DI)で結線する。
+  5. **入力は2経路をDialogueControllerへ集約**する。キーボード(送り/選択/Esc)は DialogueScene が InputManager をポーリングし(立ち上がりエッジを自前検出)controller を呼ぶ。クリックは React オーバーレイが controller を直接呼ぶ。どちらも同一の controller メソッドに集約する。
+  6. **表示状態更新イベント `dialogue:view-changed`** を GameEvents 型マップへ追加(承認: technical-architect)。payload はプレーンな `DialogueView`(three/react 非依存)。
+  7. **App.tsx は「合成点」**。シーン生成・登録、DialogueScene への DI(ApproachScene 参照・具象 DialogueController・遷移ハンドラ)、HudRoot への controller 引き渡しを行う。Scene は SceneContext から SceneManager を参照できない core 設計のため、遷移は合成点で `SceneManager.transition` を束縛したハンドラを `setTransitionHandler` で注入する。合成点は機能オーナー(段B = gameplay-engineer)が具象注入のため最小編集してよい。
+- **理由**: (a)屋台を背景に出す要求(AC2)を world 重複構築なしに満たせる(ApproachScene の render 再利用)。(b)テキスト送り・選択肢・フォーカスリングは DOM/React が最も実装しやすく、3D描画予算を消費しない(D-001のReact=UI方針に合致)。(c)会話状態機械を純TSに切り出すと Vitest で全分岐をテストでき、描画と独立する(D-003と同じ分離原則)。(d)契約を core に置くことで game が three/react を持ち込まずに済み、モジュール境界(§2)を保てる。(e)入力2経路を1つの controller へ集約すると SceneManager 状態と HUD のズレ(Risk 3)を単一経路で防げる。
+- **代替案と却下理由**:
+  - 会話ボックスも three(Sprite/canvasテクスチャ)で描く → 却下。テキスト折返し・フォーカスリング・アクセシビリティ(16px/コントラスト, INTERACTION_SPEC §5)を自前実装する負担が大きく、React の利点を捨てる。
+  - DialogueController を game に置き scenes/ui が game を import → 却下。ui→game / scenes→game の依存が生じモジュール境界(§2)に反する。契約は core が正しい所在。
+  - dialogue を専用 three シーンとして参道worldを再構築 → 却下。world 二重所有で責務が混ざり(Risk 2)、リソースも重複する。
+  - 会話のために汎用状態管理(Zustand 等)を導入 → 却下(D-006 継承。EventBus 単一経路で足りる)。
+  - Scene に SceneManager を直接渡す(SceneContext 拡張) → 却下。全シーンが遷移表を直接叩けると不正遷移の温床。遷移ハンドラ注入で必要なシーンにだけ許可する。
+- **影響**: core に `Dialogue.ts`(契約)を追加、GameEvents に `dialogue:view-changed` を追加、InputManager の追跡キーに `Enter`(セリフ送り/選択確定 INTERACTION_SPEC §3.2)を追加。新規依存はなし(three/React のみ)。段Bは game/dialogue(具象 controller・会話データ)と ui/Dialogue(表示)を実装し、App.tsx の合成点で注入、ApproachScene に E/クリック→`transition('dialogue')` を足す。goldfish 遷移は T-005/006 まで未登録のため安全に approach へフォールバックする(AC5)。
