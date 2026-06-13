@@ -13,7 +13,7 @@
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer + game-director | 4, 5, 6 | COMPLETE |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | COMPLETE |
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | COMPLETE |
-| P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | PENDING |
+| P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | COMPLETE |
 | P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer | art-director + critical-reviewer | 9 | PENDING |
 | P1 | T-010 | E2E主要動線・FPS計測・品質ゲート総点検 | qa-performance-engineer | critical-reviewer | 出荷判定 | PENDING |
 | P1 | T-011 | 出荷判定(G3体験品質レビュー: art/game/audio director+critical-reviewer並列) | critical-reviewer | Lead Agent | 出荷判定 | PENDING |
@@ -341,4 +341,47 @@ Risks：
   (3) goldfish→resultへの差し替えでESCのquitフローが切れる → quitもfinished{reason:'quit'}でresultへ。退出時も結果(多くは確保分の成否)を出す。e2eで確認
   (4) 所持品フライアニメのタイマー/再描画リーク → cleanupで解除
 Status：COMPLETE(2026-06-14、ループ2。レビュー: critical-reviewer=APPROVE(REV-T-007-1差し戻し→REV-T-007-2解消) + game-director=失敗見出しreason分岐裁定(GDD v1.2) + art-director=result専用カメラ裁定(ART §5)。新規/計221テスト・e2e10件・実GPU FPS120。core 1行(goldfish→[result])。Minor: 店主がパネル背後=T-009で店主オフセット検討)
+```
+
+---
+
+## T-008 詳細タスクカード(8番目の実装タスク — 夏祭りの夜の音)
+
+VS要件9「祭囃子・虫の声…によって夏祭りの夜を感じられる」の音響面。全音源をWeb Audio APIでプロシージャル合成し(D-004)、既に各シーンが発火している EventBus イベント(sfx:play / goldfish:* / scene:transition / stall:approach・leave)を購読して鳴らす。
+
+```
+Task ID：T-008
+Owner：audio-director
+Reviewer：critical-reviewer
+Goal：AudioEngineと環境音レイヤー(祭囃子・虫の声・群衆)+効果音を実装し、参道→会話→金魚すくい→結果の各操作・場面に音が付く。autoplay制約に対応し、マスターにリミッタを挟んで事故を防ぐ。「夏祭りの夜」が音で立ち上がる
+User Story：プレイヤーとして、参道を歩くと虫の声や遠くの祭囃子が聞こえ、操作に音が返り、夏祭りの夜にいると感じたい(VS要件9の音響面)
+Inputs：docs/AUDIO_SPEC.md(全節。§2ミックス構成, §3環境音レイヤー(crickets/crowd/hayashi/fireworks), §4効果音イベントマッピング表=イベント名と合成方法の正, §5実装構造, §6品質基準), docs/DECISION_LOG.md D-004(Web Audioのみ・Howler不可), docs/TECHNICAL_ARCHITECTURE.md(§2 audioはEventBus購読のみ・ゲームがaudioを直接呼ばない, §3 GameEvents), reports/CURRENT_STATUS.md §0-7(発火済みイベント一覧)
+Editable Files：
+  - natsumatsuri-interactive/src/audio/(新規。AudioEngine: context管理・resume・カテゴリGain(ambient/music/sfx)・マスターGain・DynamicsCompressorリミッタ・EventBus購読。ambient/: crickets/crowd/hayashi/fireworksSfx。sfx/: §4の各イベントの合成関数)
+  - natsumatsuri-interactive/src/App.tsx(合成点: AudioEngine生成・EventBus接続・初回ユーザー操作でresume・cleanupでdispose)
+  - natsumatsuri-interactive/tests/(音響ロジックのテスト=イベント→再生指示の写像、AudioContext非依存部分。OfflineAudioContextで非無音を確認できるなら可)
+  - natsumatsuri-interactive/src/main.tsx(必要なら初回操作resumeの配線)
+Forbidden Changes：
+  - src/core/(GameEvents追加が要れば報告), src/game/, src/world/, src/scenes/, src/ui/(ゲーム側はイベント発火済み。audioは購読のみ。ゲームコードからaudioを直接importしない=TECHNICAL_ARCHITECTURE §2), _parallel-r3f/, docs/(AUDIO_SPECは所有=更新可だが他は不可), package.json(依存追加禁止=Web Audioのみ), 設定ファイル
+  - 外部音声ファイル・音響ライブラリ(Howler等)の追加(D-004)。git commit/push
+  - スコープ外: 花火の視覚(T-009。fireworks:launch/burstの音は鳴らすが視覚はT-009)、追加屋台
+Acceptance Criteria：
+  AC1. AudioEngine(src/audio/): AudioContext管理、**初回ユーザー操作(クリック/キー)でresume**(autoplay制約。それ以前のイベントは破棄可)、カテゴリGain(ambient0.6/music0.5/sfx0.9)→マスターGain0.8→DynamicsCompressor→destination(AUDIO_SPEC §2)。EventBusを購読し、ゲームコードからは直接呼ばれない
+  AC2. 効果音(AUDIO_SPEC §4の全イベント): prompt/interact/dialogue-next/select/confirm/poi-dip/poi-lift/catch/secure/fish-escape/paper-warning/paper-tear/footstep/result-success/result-fail を 'sfx:play'(name)購読でプロシージャル合成・再生。各音はAUDIO_SPEC §4の合成方法の意図に沿う(水音/木質クリック/鈴/ジングル等)
+  AC3. 環境音レイヤー(AUDIO_SPEC §3): 虫の声(スズムシ)・群衆のざわめき・祭囃子(笛+太鼓+鉦)をプロシージャル合成しapproachで常時再生(ループの継ぎ目・位相唸りが目立たない)。花火音(fireworks:launch/burst購読、視覚はT-009)
+  AC4. 空間/場面ミックス: 屋台への近接(stall:approach/leave)で祭囃子・群衆が強まる等のクロスフェード(連続距離 or イベントベースの簡易クロスフェードで可)。goldfishシーン中は環境音-6dB、resultで復帰(scene:transition購読)
+  AC5. autoplay対応の確認: ブラウザで初回操作前は無音、初回操作後にAudioContextがrunningになり音が出る(コンソールにautoplay警告で機能不全にならない)
+  AC6. 事故防止(AUDIO_SPEC §6): マスターにDynamicsCompressor(リミッタ)。マスター出力がフルスケール-3dBを超えない。無音・爆音・クリップがない
+  AC7. テスト環境対応: AudioContextが無いnode/test環境でビルド・unit testが壊れない(AudioContext生成を遅延/ガード)。イベント→再生指示の写像など純ロジック部分をunit test
+  AC8. 性能・統一感: 音の追加でFPSが落ちない(50以上維持)。操作フィードバック音は発火から50ms以内(AUDIO_SPEC §6)。全体として「夏祭りの夜」の音風景として統一感がある(audio-director自己判定+T-011で最終)
+  AC9. 品質ゲートG1全通過(typecheck/lint/test/build)。新規依存なし(Web Audioのみ)。TODO/ダミーなし。ゲームコードからaudio直接import無し(grep)
+  AC10. E2E: 既存E2E(test:e2e)が通り、AudioEngine導入でconsole error/pageerrorが0件のまま(autoplay警告は重大エラー扱いしないが、機能不全エラーは0)。audio-director自身がブラウザで全対象音の再生を確認(確認手順を報告)
+Tests：tests/ に sfx:play name→合成関数ディスパッチの写像・カテゴリGain接続・resume状態遷移のunit test(AudioContextはモック or OfflineAudioContext)。コマンド: typecheck && lint && test && build && test:e2e
+Evidence：4ゲート+e2e結果、ブラウザでの全対象音の再生確認手順と結果(各イベントを発火させて音が出たか)、リミッタ動作確認(爆音入力でクリップしない)、(可能なら)OfflineAudioContextで各音が非無音であることの確認
+Risks：
+  (1) テスト/SSR環境にAudioContextが無い → 生成を初回resume時まで遅延し、未対応環境はno-opで安全に
+  (2) プロシージャル合成が機械的で祭りに聞こえない → AUDIO_SPEC §3の合成レシピ(五音音階の笛・太鼓パターン・スズムシのAM変調)に忠実に。audio-directorが耳で調整
+  (3) リミッタ不足で爆音 → DynamicsCompressor必須、マスターGainを保守的に。複数同時発火でもクリップしないか確認
+  (4) ループの継ぎ目/位相唸り → ループ素材は十分長く or 連続合成。1分放置で継ぎ目が目立たないか確認
+Status：COMPLETE(2026-06-14、ループ1。レビュー: critical-reviewer=APPROVE(REV-T-008-1)。AudioEngine+効果音15種+環境音3層(虫/群衆/祭囃子)+ミックス、Web Audioのみ・依存追加なし(D-004)、autoplay対応・DynamicsCompressorリミッタ、計231テスト(offline16skip)・e2e console error0。要対応: prompt/footstepはscenes/approach未発火(T-009)、fireworks:*はGameEvents未定義(T-009))
 ```

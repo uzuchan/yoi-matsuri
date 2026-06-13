@@ -61,3 +61,21 @@ sfx/             # 上記イベント名ごとの合成関数(再生時に都度
 - 全操作フィードバック音は発火から実発音まで50ms以内
 - 1分間放置しても環境音にループの継ぎ目・位相の唸りが目立たない
 - マスター出力がフルスケールの-3dBを超えない(リミッタ動作確認)
+
+## 7. 実装状況(T-008 / 2026-06-14)
+
+T-008 で §2〜§6 を実装済み(`src/audio/`)。AudioEngine は EventBus を購読するのみ(ゲームコードから直接 import 0件)。
+AudioContext は初回ユーザー操作まで生成を遅延し、未対応環境(node/test/SSR)は no-op。マスターに DynamicsCompressor。
+
+- **§4 全効果音(15種)**: 合成関数を実装し `sfx:play{name}` で発火(`src/audio/sfx/`)。レジストリと §4 の name の 1:1 を unit test で固定。
+- **§3 環境音**: crickets / crowd / hayashi をルックアヘッド・スケジューラで連続合成し、`resume` 後に常時再生。
+  屋台近接(`stall:approach`/`leave`)で hayashi・crowd を強め crickets を弱めるクロスフェード、`scene:transition` の
+  goldfish 入場で ambient/music を -6dB ダッキング、他シーンで復帰。
+- **発火側の現状ギャップ(audio 側は実装済み・発火待ち)**:
+  - `prompt`(近接プロンプト表示音)と `footstep`(歩行音)は §4 の契約どおり合成関数を用意済みだが、
+    現状 `scenes/approach` がこの 2 イベントを `sfx:play` で発火していない(`interact` のみ発火)。
+    audio はイベント駆動・購読のみのため、scenes/approach 側で `prompt`/`footstep` を発火すれば即座に鳴る
+    (発火は scenes 所有 = environment-engineer。T-009 仕上げ or 別途で対応)。
+  - `fireworks:launch` / `fireworks:burst` は GameEvents 未定義(花火の視覚は T-009)。合成関数は
+    `ambient/fireworksSfx.ts` に実装済みで、GameEvents 追加後に AudioEngine が購読を有効化する
+    (AudioEngine.ts に有効化コメントあり。GameEvents 追加は core 所有 = technical-architect)。

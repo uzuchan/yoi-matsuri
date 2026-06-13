@@ -12,6 +12,7 @@ import { DialogueScene } from './scenes/dialogue/DialogueScene'
 import { GoldfishScene, type GoldfishHudState } from './scenes/goldfish/GoldfishScene'
 import { ResultScene, type ResultHudState } from './scenes/result/ResultScene'
 import { resolveResult, type RewardInfo } from './game/result'
+import { AudioEngine } from './audio'
 import { HudRoot } from './ui/HudRoot'
 
 interface DebugStats {
@@ -80,6 +81,12 @@ export default function App({ controller = null }: AppProps) {
     setEventBus(events)
     const input = new InputManager()
     input.attach(window)
+
+    // --- 音響(合成点 / T-008) ---
+    // AudioEngine は EventBus を購読するのみ(ゲームコードは audio を直接呼ばない / TECHNICAL_ARCHITECTURE §2)。
+    // AudioContext は生成せず first-gesture(クリック/キー)リスナだけ張る = autoplay 制約対応・テスト安全(AC1/AC5/AC7)。
+    const audio = new AudioEngine()
+    audio.install(events)
 
     const approachScene = new ApproachScene(renderer)
     const scenes = new SceneManager(events, input)
@@ -185,6 +192,7 @@ export default function App({ controller = null }: AppProps) {
       requestResultReturnRef.current = null
       loop.stop()
       input.detach()
+      audio.dispose()
       approachScene.dispose()
       goldfishScene.dispose()
       renderer.dispose()
