@@ -10,6 +10,8 @@ import {
 import { ApproachScene } from './scenes/approach/ApproachScene'
 import { DialogueScene } from './scenes/dialogue/DialogueScene'
 import { GoldfishScene, type GoldfishHudState } from './scenes/goldfish/GoldfishScene'
+import { ResultScene, type ResultHudState } from './scenes/result/ResultScene'
+import { resolveResult, type RewardInfo } from './game/result'
 import { HudRoot } from './ui/HudRoot'
 
 interface DebugStats {
@@ -42,9 +44,10 @@ export interface AppProps {
  * canvas の上に React HUD(HudRoot)を重ねる。?debug=1 のときのみFPS/draw callオーバーレイを表示する。
  *
  * 合成点としての責務(機能オーナーが編集しうる箇所):
- * - シーンの生成・登録(ApproachScene / DialogueScene)
- * - DialogueScene への依存注入: ApproachScene 参照(背景描画)・具象 DialogueController・遷移ハンドラ
- * - HudRoot への controller 引き渡し(クリック入力の集約先)
+ * - シーンの生成・登録(ApproachScene / DialogueScene / GoldfishScene / ResultScene)
+ * - 各シーンへの依存注入: ApproachScene 参照(背景描画)・具象 DialogueController・遷移ハンドラ・HUD 橋渡し
+ * - 通しループの結線(T-007): goldfish:finished → result(payload で確保数を渡す)→「参道へ戻る」→ approach。
+ *   結果の報酬を所持品スロットへ反映し、approach 復帰時にフライイン演出を起こす。
  */
 export default function App({ controller = null }: AppProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -53,6 +56,14 @@ export default function App({ controller = null }: AppProps) {
   const [debugStats, setDebugStats] = useState<DebugStats | null>(null)
   // 金魚すくい HUD 状態(GoldfishScene 由来。EventBus 非経由で React 橋渡し / T-006)。
   const [goldfishHud, setGoldfishHud] = useState<GoldfishHudState | null>(null)
+  // 結果 HUD 状態(ResultScene 由来。EventBus 非経由で React 橋渡し / T-007)。
+  const [resultHud, setResultHud] = useState<ResultHudState | null>(null)
+  // 所持品(獲得報酬の蓄積。表示のみ・使用機能なしだが実動作で積み上がる / T-007 AC5)。
+  const [inventory, setInventory] = useState<RewardInfo[]>([])
+  // 所持品フライイン演出のトリガー(報酬追加ごとに +1。InventorySlot が変化を検知して演出する)。
+  const [inventoryFlyToken, setInventoryFlyToken] = useState(0)
+  // 「参道へ戻る」のマウス経路を ResultScene.requestReturn へ集約するためのハンドル。
+  const requestResultReturnRef = useRef<(() => void) | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -81,24 +92,48 @@ export default function App({ controller = null }: AppProps) {
     goldfishScene.setHudListener((state) => setGoldfishHud(state))
     scenes.register(goldfishScene)
 
-    // セッション終了 → approach へ戻す(T-007 の result 未実装のための暫定。
-    // SceneManager に goldfish→approach を一時許可済み。T-007 で result 経由へ差し替える)。
-    // finished の payload(caught/reason)は T-007 の result が受け取る接続点になる。
-    const unsubscribeFinished = events.on('goldfish:finished', () => {
-      if (scenes.current === 'goldfish') scenes.transition('approach')
+    // --- 結果シーンの登録・配線(合成点 / T-007) ---
+    // ResultScene は背景に ApproachScene.render を再利用(屋台が結果表示中も見える / AC6)、
+    // 確保数(secured)から段・見出し・店主セリフ・報酬を確定して setResultListener で React へ橋渡しする
+    // (EventBus 非経由。会話/金魚 HUD と排他)。「参道へ戻る」は ResultScene が approach へ遷移する。
+    const resultScene = new ResultScene(approachScene)
+    resultScene.setResultListener((state) => setResultHud(state))
+    resultScene.setTransitionHandler((to) => scenes.transition(to))
+    scenes.register(resultScene)
+    // マウス経路(ui/Result のボタン)の確定要求を ResultScene へ集約する(キーボード経路と同一の出口)。
+    requestResultReturnRef.current = () => resultScene.requestReturn()
+
+    // --- 通しループの結線: goldfish:finished → result(T-007) ---
+    // セッション終了(torn/timeout/quit いずれも)で result シーンへ遷移し、payload で確保数を渡す。
+    // SceneManager は goldfish→['result'] のみ許可(T-006 の goldfish→approach 一時措置を撤去)。
+    // result→approach は既存許可。これで通しループ(approach→会話→金魚すくい→result→approach)が一周する。
+    const unsubscribeFinished = events.on('goldfish:finished', ({ caught, reason }) => {
+      if (scenes.current === 'goldfish') scenes.transition('result', { caught, reason })
+    })
+
+    // 結果の報酬を所持品へ反映する(T-007 AC5/AC7)。
+    // 「参道へ戻る」(result→approach)の瞬間に 1 回だけ獲得報酬を積み、フライイン演出を起こす
+    // (マウス経路=ボタン、キーボード経路=Enter のどちらも ResultScene が approach へ遷移するため、
+    //  scene:transition の result→approach を単一の付与ポイントにする = 二重付与なし)。
+    // 報酬は直近の結果(確保数)から確定する(GDD §3.2)。
+    let pendingReward: RewardInfo | null = null
+    const unsubscribeReward = events.on('goldfish:finished', ({ caught }) => {
+      pendingReward = resolveResult(caught).reward
+    })
+    const unsubscribeGrant = events.on('scene:transition', ({ from, to }) => {
+      if (from === 'result' && to === 'approach' && pendingReward) {
+        const reward = pendingReward
+        pendingReward = null
+        setInventory((prev) => [...prev, reward])
+        setInventoryFlyToken((n) => n + 1)
+      }
     })
 
     // --- 会話シーンの登録・配線(合成点 / D-008・T-004 段B) ---
     // 具象 DialogueController が注入されたときだけ DialogueScene を登録する。
-    // - 背景描画のため ApproachScene 参照を注入(屋台が会話中も見える / AC2)。
-    // - Scene は SceneManager を直接参照しない core 設計のため、遷移は合成点で束縛したハンドラ経由で行う。
     let unsubscribeChoice: (() => void) | null = null
     if (controller) {
       const dialogueScene = new DialogueScene(approachScene, controller)
-      // DialogueScene の遷移ハンドラ。合成点が SceneManager.transition を束縛する。
-      // DialogueScene が直接遷移するのは Esc 打ち切り(dialogue→approach)のみで、choice 後は遷移しない
-      // (choice の遷移は下記 routeChoice が単一オーナーとして決める / REV-T-004-1 Major-2)。
-      // よって二重遷移は起きず、ここは素のハンドラでよい(以前の try/catch 吸収は不要になった)。
       dialogueScene.setTransitionHandler((to) => scenes.transition(to))
       scenes.register(dialogueScene)
 
@@ -106,19 +141,12 @@ export default function App({ controller = null }: AppProps) {
       approachScene.setTransitionHandler((to) => scenes.transition(to))
 
       // 会話の選択確定(choiceId)に応じた遷移の単一オーナー(合成点 / REV-T-004-1 Major-2)。
-      // キーボード経路: DialogueScene が確定時に 'dialogue:choice' を発火する(自身では遷移しない)。
-      // マウス経路: ui/Dialogue が確定/締めセリフ送り切りで 'dialogue:choice' を発火する。
-      // どちらも同じ choiceId で本ハンドラへ集約し、choice に対する遷移はここだけが決める
-      // (二重遷移なし / INTERACTION_SPEC §1-3: 行き止まりなし)。
       const routeChoice = (choiceId: string): void => {
-        // 既に dialogue を抜けていれば何もしない(重複発火・既遷移ガード)。
         if (scenes.current !== 'dialogue') return
         if (choiceId === 'play') {
-          // 「遊んでいく」→ goldfish(T-006 で本結線。GoldfishScene 登録済みなので本遷移する)。
           scenes.transition('goldfish')
           return
         }
-        // 「またあとで」: 参道へ戻る。
         scenes.transition('approach')
       }
       unsubscribeChoice = events.on('dialogue:choice', ({ choiceId }) => routeChoice(choiceId))
@@ -152,6 +180,9 @@ export default function App({ controller = null }: AppProps) {
       window.removeEventListener('resize', handleResize)
       unsubscribeChoice?.()
       unsubscribeFinished()
+      unsubscribeReward()
+      unsubscribeGrant()
+      requestResultReturnRef.current = null
       loop.stop()
       input.detach()
       approachScene.dispose()
@@ -159,6 +190,7 @@ export default function App({ controller = null }: AppProps) {
       renderer.dispose()
       setEventBus(null)
       setGoldfishHud(null)
+      setResultHud(null)
     }
   }, [controller])
 
@@ -166,9 +198,17 @@ export default function App({ controller = null }: AppProps) {
     <>
       <canvas ref={canvasRef} className="game-canvas" />
       {/* React HUD オーバーレイ(D-008)。EventBus 由来の会話表示状態を購読し、
-          段B の会話オーバーレイ(ui/Dialogue)をマウントする枠。controller 未注入(段A)時は何も描画しない。 */}
+          会話/金魚/結果/所持品のオーバーレイをマウントする枠。controller 未注入(段A)時は会話を描画しない。 */}
       {eventBus !== null && (
-        <HudRoot events={eventBus} controller={controller} goldfishHud={goldfishHud} />
+        <HudRoot
+          events={eventBus}
+          controller={controller}
+          goldfishHud={goldfishHud}
+          resultHud={resultHud}
+          onResultReturn={() => requestResultReturnRef.current?.()}
+          inventory={inventory}
+          inventoryFlyToken={inventoryFlyToken}
+        />
       )}
       {debugStats !== null && (
         <div className="debug-overlay" role="status">

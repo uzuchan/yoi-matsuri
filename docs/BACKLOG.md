@@ -12,7 +12,7 @@
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer(+technical-architectが基盤) | critical-reviewer + interaction-designer | 3 | COMPLETE |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer + game-director | 4, 5, 6 | COMPLETE |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | COMPLETE |
-| P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | PENDING |
+| P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | COMPLETE |
 | P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | PENDING |
 | P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer | art-director + critical-reviewer | 9 | PENDING |
 | P1 | T-010 | E2E主要動線・FPS計測・品質ゲート総点検 | qa-performance-engineer | critical-reviewer | 出荷判定 | PENDING |
@@ -296,4 +296,49 @@ Risks：
   (3) 紙の不透明度劣化が水中で見えにくい → op範囲と劣化表現をART §2/§4.6に合わせ、art-director視覚レビュー
   (4) goldfish→approach一時許可がT-007で残置 → コメント明記し、T-007でresult経由へ必ず差し替え(CURRENT_STATUSにも記録)
 Status：COMPLETE(2026-06-14、ループ1。レビュー: critical-reviewer=APPROVE(REV-T-006-1) + art-director=合格(ART §2に器の色/goldfishフォグ密度0.12/紙劣化式を明文化)。新規29テスト/計191件・e2e8件。実GPU FPS120/triangles2812。core/SceneManagerにgoldfish→approach一時許可(T-007でresult経由へ差し替え))
+```
+
+---
+
+## T-007 詳細タスクカード(7番目の実装タスク — コア物語ループの完成)
+
+VS要件7「結果に応じた店主の反応と報酬がある」・8「ゲーム終了後、祭りの参道へ戻れる」。金魚すくい終了後に結果画面を出し、確保数に応じた店主の反応と報酬を表示し、参道へ戻す。`goldfish→result→approach` を正式結線する。
+
+```
+Task ID：T-007
+Owner：gameplay-engineer
+Reviewer：game-director(店主反応・報酬段の正当性) + critical-reviewer(総合)
+Goal：金魚すくい終了(torn/timeout/quit)後にresultシーンへ遷移し、確保数(secured)に応じた見出し・店主のセリフ・報酬を表示し、報酬を所持品スロットに反映、「参道へ戻る」でapproachへ戻す。core/Appのgoldfish→approach一時措置をgoldfish→result→approachへ差し替える
+User Story：プレイヤーとして、金魚すくいの結果に店主が反応して報酬をくれ、参道へ戻って余韻を持ちたい(VS要件7・8)
+Inputs：docs/GAME_DESIGN_DOCUMENT.md(§3.2 結果別の店主の反応=見出し条件・セリフ・報酬の正、「捕獲」の定義=secured, §5 HUD所持品スロット), docs/INTERACTION_SPEC.md(§2状態遷移 result→approach, §3.4 result入力=クリック/Enterで「参道へ戻る」+報酬がHUD所持品スロットへ飛ぶ0.8sアニメ, §4文言=見出し3種/ボタン「参道へ戻る」), docs/ART_DIRECTION.md(§2 UIテキスト#f5f0e8/アクセント#ff9d45/80%透過パネル, §5カメラ result=屋台正面・店主中央, §7), docs/AUDIO_SPEC.md §4(result-success/result-fail/confirm), docs/DECISION_LOG.md D-008(会話/結果オーバーレイの枠組み), reports/CURRENT_STATUS.md §0-6(T-006引き継ぎ: goldfish:finished{caught,reason}, 差し替え接続点)
+Editable Files：
+  - natsumatsuri-interactive/src/game/result/(新規。報酬段判定の純TS: caught→tier(fail/success/great)→店主セリフ/報酬ID。GDD §3.2をデータ化。three/react非依存)
+  - natsumatsuri-interactive/src/scenes/result/(新規。ResultScene: 背景にApproachScene.render再利用(屋台が見える)、結果状態をHUDへ発火、クリック/Enterで「参道へ戻る」遷移。DialogueScene/D-008のパターン踏襲)
+  - natsumatsuri-interactive/src/ui/(Result.tsx 結果オーバーレイ=見出し・店主セリフ・報酬表示・「参道へ戻る」ボタン、InventorySlot 所持品スロット=approach右下に獲得報酬を表示。HudRootに会話/金魚HUDと排他で組込)
+  - natsumatsuri-interactive/src/App.tsx(合成点: ResultScene生成・登録・注入、goldfish:finished→transition('result',payload)、所持品スロットの獲得報酬state、報酬→スロットのフライアニメ起点)
+  - natsumatsuri-interactive/src/core/SceneManager.ts(**この1行のみ**: ALLOWED_TRANSITIONSのgoldfishを ['result'] に戻す=T-006の一時 'approach' を撤去。result→['approach']は既存)
+  - natsumatsuri-interactive/src/index.css(result/所持品スロットのスタイル)
+  - natsumatsuri-interactive/tests/(報酬段判定の純TS unit test)、natsumatsuri-interactive/e2e/(結果→復帰のE2E)
+Forbidden Changes：
+  - src/game/goldfish/, src/scenes/goldfish/(利用のみ。終了→resultはApp側で配線), src/scenes/approach/(プロンプト等不変。所持品スロットはui/のReact HUDで足す), src/scenes/dialogue/, src/world/, src/audio/, src/core/(SceneManagerの上記1行を除く), _parallel-r3f/, docs/**(疑義は報告), package.json, 設定ファイル
+  - 新規依存(three/Reactのみ)。git commit/push。スコープ外(音実装T-008・花火/仕上げT-009・追加屋台)
+Acceptance Criteria：
+  AC1. 金魚すくい終了(torn/timeout/quit いずれも)で result シーンへ遷移する(App: goldfish:finished→transition('result',{caught,reason}))。core/SceneManagerはgoldfish→['result']に戻し、goldfish→approach一時措置を撤去
+  AC2. 確保数(secured=finished.caught)に応じた段判定(GDD §3.2): 0匹=失敗 / 1〜2匹=成功 / 3匹以上=大成功。判定は src/game/result/ の純TSでunit test
+  AC3. 見出し(INTERACTION_SPEC §4): 失敗「ポイが破れてしまった…」/成功「金魚をすくった!」/大成功「大漁!名人級!」を段に応じて表示
+  AC4. 店主のセリフ(GDD §3.2のとおり): 失敗「ありゃー、破れちまったか。まあ祭りの夜は長いんだ、また挑戦しな!」/成功「おっ、やるねえ!ほら、大事にしてやんなよ。」/大成功「うおっ、名人かい!?こりゃあ参った、特別だ!」
+  AC5. 報酬(GDD §3.2): 失敗=reward:candy(ラムネ風アメ)/成功=reward:bag-small(金魚袋)/大成功=reward:bag-deluxe(大きな金魚袋+出目金)。結果画面に視覚表示し、所持品スロット(approach右下HUD)へ反映(INTERACTION_SPEC §3.4の0.8sフライアニメ。複雑なら簡易でも可だが「飛んで入る」動作があること)。所持品は表示のみ(使用機能なし)だが実動作(獲得が実際に蓄積・表示される)
+  AC6. 背景: result表示中も屋台・店主・提灯のワールド造形が見える(ResultSceneがApproachScene.render再利用)。会話/金魚HUDとは排他表示
+  AC7. 「参道へ戻る」(クリック/Enter、INTERACTION_SPEC §3.4)で approach へ戻る。result-success(成功/大成功)/result-fail(失敗)/confirm のsfx:play発火(発火のみ)。行き止まりなし。戻った後、所持品スロットに獲得報酬が残っている
+  AC8. マウスのみ・キーボードのみ両方で結果画面を進められる(§1原則)。テキスト16px+・フォーカスリング(§5)・ART §2配色
+  AC9. 通しループ完成: approach→近接E→会話→遊んでいく→金魚すくい→(すくう/破れる)→result(反応+報酬)→参道へ戻る→approach が一周動作する
+  AC10. 品質ゲートG1全通過+E2E(終了→result→各段表示→参道復帰、console error0)。新規依存なし。TODO/ダミーなし。実GPU FPS50以上維持。reports/screenshots/T-007-result.png 保存(結果画面=見出し・店主セリフ・報酬が屋台背景の上に)
+Tests：tests/ に報酬段判定(caught→tier→セリフ/報酬)のunit test(境界0/1/2/3)、e2e/result.spec.ts(通しループ+各段)。コマンド: typecheck && lint && test && build && test:e2e
+Evidence：4ゲート+e2e結果、reports/screenshots/T-007-result.png、各段(0/1-2/3+)の表示確認手順、通しループ確認、FPS実測(GPUフラグ明記)
+Risks：
+  (1) 段判定の境界(2匹=成功/3匹=大成功)誤り → unit testで境界固定。reasonに依らずsecured数で段判定(GDD §3.2)
+  (2) 失敗見出し「ポイが破れてしまった…」がtimeout 0匹に不一致 → 既定は段(0匹)で出すが、game-directorに文言の妥当性確認を依頼(必要なら別文言をGDDで定義)
+  (3) goldfish→resultへの差し替えでESCのquitフローが切れる → quitもfinished{reason:'quit'}でresultへ。退出時も結果(多くは確保分の成否)を出す。e2eで確認
+  (4) 所持品フライアニメのタイマー/再描画リーク → cleanupで解除
+Status：COMPLETE(2026-06-14、ループ2。レビュー: critical-reviewer=APPROVE(REV-T-007-1差し戻し→REV-T-007-2解消) + game-director=失敗見出しreason分岐裁定(GDD v1.2) + art-director=result専用カメラ裁定(ART §5)。新規/計221テスト・e2e10件・実GPU FPS120。core 1行(goldfish→[result])。Minor: 店主がパネル背後=T-009で店主オフセット検討)
 ```

@@ -223,6 +223,18 @@ export class ApproachScene implements Scene {
     this.renderer.render(this.scene, this.camera)
   }
 
+  /**
+   * 本シーンの world(屋台・店主・提灯など)を、外部から渡された任意のカメラで描画する読み取り専用
+   * ヘルパ(Lead 承認の最小スコープ例外 / REV-T-007-1 Major-2)。
+   *
+   * 用途: ResultScene が approach の world を「result 専用固定カメラ」で描くため(ART §5 result:
+   * 屋台正面・店主中央)。本シーンの追従カメラ・update・dispose・既存挙動には一切触れない。
+   * scene / world の所有は ApproachScene のまま(world 二重生成をしない)。レンダリングのみ行う。
+   */
+  renderWith(camera: PerspectiveCamera): void {
+    this.renderer.render(this.scene, camera)
+  }
+
   resize(width: number, height: number): void {
     this.camera.aspect = height > 0 ? width / height : 1
     this.camera.updateProjectionMatrix()

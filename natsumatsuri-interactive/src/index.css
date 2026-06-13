@@ -303,6 +303,227 @@ body {
   }
 }
 
+/*
+ * 結果オーバーレイ(src/ui/Result.tsx / T-007 / GDD §3.2・INTERACTION_SPEC §3.4・§4)。
+ * ART §2: UIテキスト #f5f0e8 / アクセント #ff9d45 / 背景 #0a0e2e の80%透過パネル。
+ * INTERACTION_SPEC §5: テキスト16px以上・フォーカスリング表示。
+ * ART §5: result は屋台正面・店主中央の固定カメラ背景の上にパネルを重ねる(背景は ResultScene が描画)。
+ */
+.result {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none; /* パネル自身だけが入力を受ける(.hud-root と同方針) */
+  z-index: 7; /* 会話/金魚 HUD より前面(終了直後の最優先表示) */
+}
+
+.result__panel {
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  width: min(560px, calc(100vw - 48px));
+  padding: 32px 36px 28px;
+  border: 1px solid rgba(245, 240, 232, 0.2);
+  border-radius: 14px;
+  background: rgba(10, 14, 46, 0.8); /* #0a0e2e の80%透過パネル(ART §2) */
+  color: #f5f0e8; /* UIテキスト(ART §2) */
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(3px);
+  text-align: center;
+  animation: result-rise 0.35s ease-out;
+}
+
+/* 成功/大成功は縁を暖色アクセントで強める(失敗は控えめ。視線誘導 / ART §7-4 と競合しない範囲)。 */
+.result__panel--success {
+  border-color: rgba(255, 157, 69, 0.45);
+}
+.result__panel--great {
+  border-color: #ff9d45;
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.5),
+    0 0 22px rgba(255, 157, 69, 0.3);
+}
+
+@keyframes result-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.result__heading {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #ff9d45; /* UIアクセント(ART §2): 見出しを強調 */
+}
+
+.result__line {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 19px;
+  line-height: 1.6;
+}
+
+.result__speaker {
+  font-size: 16px;
+  font-weight: 700;
+  color: #ff9d45; /* UIアクセント(ART §2): 話者名 */
+  letter-spacing: 0.04em;
+}
+
+.result__line-text {
+  font-size: 19px;
+}
+
+/* 報酬表示(アイコン+名前)。所持品スロットへ飛ぶ前の「結果画面の報酬」(INTERACTION_SPEC §3.4)。 */
+.result__reward {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  border-radius: 12px;
+  background: rgba(245, 240, 232, 0.08);
+  border: 1px solid rgba(245, 240, 232, 0.18);
+}
+
+.result__reward-icon {
+  font-size: 34px;
+  line-height: 1;
+}
+
+.result__reward-name {
+  font-size: 19px;
+  font-weight: 600;
+}
+
+/* 「参道へ戻る」ボタン(INTERACTION_SPEC §4 文言)。フォーカスリング表示(§5)。 */
+.result__button {
+  margin-top: 4px;
+  padding: 14px 32px;
+  font-size: 20px;
+  font-weight: 700;
+  font-family: system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  color: #0a0e2e;
+  background: #ff9d45; /* UIアクセント(ART §2) */
+  border: 2px solid #ff9d45;
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    filter 0.12s ease,
+    transform 0.06s ease;
+}
+
+.result__button:hover {
+  filter: brightness(1.08);
+}
+
+.result__button:active {
+  transform: translateY(1px);
+}
+
+.result__button:focus-visible {
+  outline: 3px solid #f5f0e8;
+  outline-offset: 3px;
+}
+
+/*
+ * 所持品スロット(src/ui/InventorySlot.tsx / T-007 / GDD §5)。approach 右下に獲得報酬を蓄積表示。
+ * マウス不要で読める(pointer-events:none)。ART §2: 80%透過パネル / テキスト #f5f0e8。
+ */
+.inventory {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(10, 14, 46, 0.8); /* 80%透過パネル(ART §2) */
+  border: 1px solid rgba(245, 240, 232, 0.18);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+  color: #f5f0e8; /* UIテキスト(ART §2) */
+  max-width: 240px;
+  z-index: 6;
+}
+
+.inventory__label {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  opacity: 0.8;
+}
+
+.inventory__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.inventory__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(245, 240, 232, 0.08);
+  border: 1px solid rgba(245, 240, 232, 0.14);
+  font-size: 16px;
+}
+
+.inventory__icon {
+  font-size: 24px;
+  line-height: 1;
+}
+
+.inventory__name {
+  font-size: 16px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/*
+ * フライイン演出(INTERACTION_SPEC §3.4: 報酬が所持品スロットへ飛んで入る 0.8s)。
+ * 画面中央寄り(上方・大きめ)からスロット位置(右下)へ縮みながら入る。
+ */
+.inventory__item--flying {
+  animation: inventory-fly-in 0.8s cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+@keyframes inventory-fly-in {
+  0% {
+    opacity: 0;
+    transform: translate(-180px, -220px) scale(2.4);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 1;
+    transform: translate(0, 0) scale(1);
+  }
+}
+
 /* ?debug=1 のときのみ表示されるデバッグオーバーレイ */
 .debug-overlay {
   position: fixed;
