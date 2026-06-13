@@ -7,7 +7,7 @@
 | 優先 | Task ID | 内容 | Owner | Reviewer | VS要件 | Status |
 |---|---|---|---|---|---|---|
 | P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | COMPLETE |
-| P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | PENDING |
+| P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | COMPLETE |
 | P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | PENDING |
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer | critical-reviewer | 3 | PENDING |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer | 4, 5, 6 | PENDING |
@@ -68,3 +68,44 @@ Status：COMPLETE(2026-06-13、ループ1で完了。レビュー: reports/revie
 | @playwright/test | devDependencies | D-005 |
 
 これ以外の依存追加はこのタスクでは禁止。
+
+---
+
+## T-002 詳細タスクカード(2番目の実装タスク)
+
+```
+Task ID：T-002
+Owner：environment-engineer
+Reviewer：art-director(視覚) + critical-reviewer(総合)
+Goal：固定カメラが見下ろす夜の神社参道の「世界」を構築する。提灯列・鳥居・金魚すくい屋台(外観)・群衆シルエット・夜のライティングで、ART_DIRECTIONの寒色の夜×暖色の灯りの対比を成立させる
+User Story：プレイヤーとして、画面を開いた瞬間に「夏祭りの夜の参道」だと分かる風景を見たい。なぜなら、ここを歩き屋台を見つけるという体験全体の土台になるから(VS要件1の視覚面・9の視覚面)
+Inputs：docs/ART_DIRECTION.md(§2パレット全色, §3造形寸法, §4ライティング/フォグ, §5カメラ, §6性能予算, §7レビュー基準), docs/GAME_DESIGN_DOCUMENT.md(§2参道の寸法=幅8m奥行60m・提灯間隔・屋台位置・鳥居位置), docs/TECHNICAL_ARCHITECTURE.md(§2モジュール境界=world/, §4性能予算), reports/CURRENT_STATUS.md(§0のT-001引き継ぎ事項)
+Editable Files：
+  - natsumatsuri-interactive/src/world/(新規。提灯・鳥居・屋台・群衆・ライティング・接地のビルダーモジュール群)
+  - natsumatsuri-interactive/src/scenes/approach/ApproachScene.ts(world/のオブジェクトを組み込む。T-001の地面emissive暫定値の見直しを含む)
+  - natsumatsuri-interactive/tests/world/(新規。配置計算等の純TSロジックのunit test)
+Forbidden Changes：
+  - src/core/, src/game/, src/ui/, src/audio/, src/scenes/goldfish/(他エージェント所有)
+  - src/App.tsx(ゲームシェル。dispose()のライフサイクル配線が必要ならLeadの統合作業に委ねる。ApproachScene側にdispose()を実装するに留める)
+  - 依存追加(threeのみ使用可。新規npm依存はtechnical-architect承認が必要)
+  - docs/**, .claude/**, package.json, 設定ファイル, git commit/push
+  - スコープ外: プレイヤー移動・追従カメラ・近接判定(T-003)、花火アニメ・群衆/提灯以外の動的演出の作り込み(T-009)、金魚すくいの遊技水槽(T-006)、音響(T-008)
+Acceptance Criteria：
+  AC1. src/world/ に責務分割されたビルダーが存在する(例: lanterns.ts, torii.ts, stall.ts, crowd.ts, lighting.ts, ground.ts)。各ビルダーはThree.jsのObject3Dを返し、ApproachScene がそれらを組み立てる
+  AC2. 提灯列: 参道両脇に2.5m間隔・各側24個、高さ2.6mのワイヤーに吊る。形状は楕円体(径0.35m・高さ0.45m)+上下の円筒枠、紙は emissive #ff9d45・赤帯 #c0392b。提灯本体はInstancedMeshで描画する。各提灯はわずかに揺れる(±2°、周期3〜5sのランダム位相。update(dt)で駆動)
+  AC3. 鳥居: 参道終端(z≈-60)に高さ8m、色 #b03a2e。シルエット重視で可
+  AC4. 金魚すくい屋台: 参道中腹の右側に配置。間口3m×奥行2m、紅白幕(#c0392b/#f5f0e8)、カウンター、屋根、裸電球2個(#ffd166 発光)、水槽(楕円・水面 #1e4d6b opacity0.85)、店主の人型シルエット+前掛け。※屋台は外観のみ(遊技機能なし)
+  AC5. 群衆シルエット: 参道脇に15〜20体、人型(高さ1.5〜1.8m)、色 #0d1126 無発光。InstancedMeshで描画(個体ごとの揺れ歩行はT-009のため静的配置でよい)
+  AC6. ライティング(ART §4厳守): 動的PointLightは提灯代表4灯(#ff9d45, intensity1.2, distance6, decay2)+屋台1灯(#ffd166, intensity1.5, distance8)の計5灯以内、合計6灯を超えない。影マップは使わない。接地感は暗色の接地円で表現する。屋台前がシーン中で最も明るい場所になっている。T-001の地面emissive暫定値(0.9)は光源導入を踏まえ見直す(撤去または減衰)
+  AC7. パレット遵守: 画面に現れる色がART §2のパレット内に収まっている(中間色光源を置かない)
+  AC8. 性能: renderer.info.render.triangles がシーン全体で50,000以下、動的PointLightが6灯以下。build+previewで ?debug=1 のFPSが50以上(計測条件を報告に明記)
+  AC9. リソース管理: ApproachScene.dispose() を実装し、生成した全geometry/material/InstancedMeshのGPUリソースを解放する。複数回呼んでも安全(idempotent)。これを検証するunit testがある(M-2対応)。フレーム毎の新規アロケーションを行わない
+  AC10. 品質ゲートG1全通過(typecheck/lint/test/build エラー0)。TODO/ダミー残置なし。新規依存なし。スクリーンショットを reports/screenshots/T-002-approach.png に保存
+Tests：tests/world/ に配置計算の決定論的unit test(提灯24個×2側の座標、群衆体数が15〜20、屋台/鳥居の配置座標がGDD通り)、dispose()のidempotentテスト。乱数を使う場合はindexベースの決定論的ジッタにする(再現可能・テスト可能であること。core/rngへの依存は作らない)。コマンド: npm run typecheck && npm run lint && npm run test && npm run build、目視はbuild+preview
+Evidence：4コマンドの実行ログ、triangles実測値とdebug FPS実測値、reports/screenshots/T-002-approach.png、ART §2パレットとの色対応表(使用色→用途→ART該当行)
+Risks：
+  (1) PointLight 5灯+多数のemissiveメッシュで暗く沈む/明るすぎる → exposureはApp.tsxで固定(触らない)。emissiveIntensityとPointLight distanceで調整し報告に最終値を記載
+  (2) 提灯/群衆をInstancedMeshにすると個体の揺れ実装が複雑 → 揺れはinstanceMatrixの毎フレーム更新で実装。重い場合は揺れ対象を可視範囲に限定し報告
+  (3) 三角形数が予算超過 → セグメント数を落とす(球の分割等)。50k超なら報告しart-directorと相談
+Status：COMPLETE(2026-06-13、ループ2で完了。レビュー: critical-reviewer=APPROVE / art-director=無条件合格。reports/reviews/REV-T-002-1.md)
+```

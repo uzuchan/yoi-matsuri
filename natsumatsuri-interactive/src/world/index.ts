@@ -1,0 +1,30 @@
+/**
+ * src/world 公開API。
+ * 参道シーン(scenes/approach)が環境オブジェクトのビルダーをここから取得する。
+ * 各ビルダーは WorldObject({ object, dispose, update? })を返す。
+ */
+export type { WorldObject } from './types'
+export {
+  PALETTE,
+  BULB_COLOR,
+  APPROACH,
+  LANTERN_X,
+  lanternZ,
+  jitter01,
+  jitterRange,
+} from './palette'
+
+export { createSky } from './sky'
+export { createGround } from './ground'
+export type { ContactCircle } from './ground'
+export {
+  createLanterns,
+  computeLanternAnchors,
+  pickRepresentativeLanterns,
+} from './lanterns'
+export type { LanternAnchor } from './lanterns'
+export { createTorii } from './torii'
+export { createStall, STALL_POSITION, STALL_BULB_HEIGHT } from './stall'
+export { createCrowd, computeCrowdPlacements } from './crowd'
+export type { CrowdPlacement } from './crowd'
+export { createLighting } from './lighting'

@@ -38,8 +38,9 @@ export default function App() {
     const input = new InputManager()
     input.attach(window)
 
+    const approachScene = new ApproachScene(renderer)
     const scenes = new SceneManager(events, input)
-    scenes.register(new ApproachScene(renderer))
+    scenes.register(approachScene)
     scenes.start('approach')
 
     const loop = new GameLoop()
@@ -68,6 +69,7 @@ export default function App() {
       window.removeEventListener('resize', handleResize)
       loop.stop()
       input.detach()
+      approachScene.dispose()
       renderer.dispose()
     }
   }, [])
