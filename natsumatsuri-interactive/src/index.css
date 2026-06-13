@@ -158,6 +158,151 @@ body {
   outline-offset: 2px;
 }
 
+/*
+ * 金魚すくい HUD(src/ui/GoldfishHud.tsx / T-006)。
+ * ART §2: UIテキスト #f5f0e8 / アクセント #ff9d45 / 背景 #0a0e2e の80%透過パネル。
+ * INTERACTION_SPEC §5: テキスト16px以上。マウス不要で読める(pointer-events:none で操作を奪わない)。
+ * .hud-root が pointer-events:none のため、本 HUD も読み取り専用で操作を奪わない。
+ */
+.goldfish-hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  font-family: system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  color: #f5f0e8; /* UIテキスト(ART §2) */
+}
+
+/* 上段: 残り時間(左)+ 確保数(右)。 */
+.goldfish-hud__top {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  right: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+}
+
+.goldfish-hud__time,
+.goldfish-hud__secured {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(10, 14, 46, 0.8); /* 80%透過パネル(ART §2) */
+  border: 1px solid rgba(245, 240, 232, 0.18);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+}
+
+.goldfish-hud__label {
+  font-size: 16px;
+  opacity: 0.75;
+  letter-spacing: 0.04em;
+}
+
+.goldfish-hud__time-value,
+.goldfish-hud__secured-value {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.goldfish-hud__secured-value {
+  color: #ff9d45; /* UIアクセント(ART §2): すくった数を強調 */
+}
+
+.goldfish-hud__unit {
+  font-size: 16px;
+  opacity: 0.75;
+}
+
+/* 耐久ゲージ(画面下中央)。紙の劣化(ratio)と連動。 */
+.goldfish-hud__gauge {
+  position: absolute;
+  left: 50%;
+  bottom: 28px;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: min(420px, calc(100vw - 48px));
+  padding: 10px 16px;
+  border-radius: 10px;
+  background: rgba(10, 14, 46, 0.8);
+  border: 1px solid rgba(245, 240, 232, 0.18);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4);
+}
+
+.goldfish-hud__gauge-label {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  flex: 0 0 auto;
+}
+
+.goldfish-hud__gauge-track {
+  position: relative;
+  flex: 1 1 auto;
+  height: 14px;
+  border-radius: 7px;
+  background: rgba(245, 240, 232, 0.14);
+  overflow: hidden;
+}
+
+.goldfish-hud__gauge-fill {
+  height: 100%;
+  border-radius: 7px;
+  background: #e8c87a; /* ポイの枠色(ART §2): 紙が健全な状態 */
+  transition: width 0.1s linear;
+}
+
+/* 残30以下: 警告色(金魚の赤)+点滅(INTERACTION_SPEC §3.3 ゲージ点滅 / GDD §4.6 破損予兆)。 */
+.goldfish-hud__gauge-fill--warning {
+  background: #e84a30; /* 金魚の赤(ART §2)を警告に流用 */
+  animation: goldfish-gauge-blink 0.6s ease-in-out infinite;
+}
+
+@keyframes goldfish-gauge-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}
+
+/* 開始2秒ヒント(画面中央上寄り)。INTERACTION_SPEC §4 文言。 */
+.goldfish-hud__hint {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 12px 22px;
+  border-radius: 10px;
+  background: rgba(10, 14, 46, 0.8);
+  border: 1px solid rgba(255, 157, 69, 0.4); /* アクセント縁 */
+  color: #f5f0e8;
+  font-size: 19px;
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.45);
+  animation: goldfish-hint-fade 0.3s ease-out;
+}
+
+@keyframes goldfish-hint-fade {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -6px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
 /* ?debug=1 のときのみ表示されるデバッグオーバーレイ */
 .debug-overlay {
   position: fixed;

@@ -9,6 +9,7 @@ import {
 } from './core'
 import { ApproachScene } from './scenes/approach/ApproachScene'
 import { DialogueScene } from './scenes/dialogue/DialogueScene'
+import { GoldfishScene, type GoldfishHudState } from './scenes/goldfish/GoldfishScene'
 import { HudRoot } from './ui/HudRoot'
 
 interface DebugStats {
@@ -50,6 +51,8 @@ export default function App({ controller = null }: AppProps) {
   // HudRoot に渡す EventBus / controller を state で保持し、useEffect 初期化後に確定させる。
   const [eventBus, setEventBus] = useState<EventBus | null>(null)
   const [debugStats, setDebugStats] = useState<DebugStats | null>(null)
+  // 金魚すくい HUD 状態(GoldfishScene 由来。EventBus 非経由で React 橋渡し / T-006)。
+  const [goldfishHud, setGoldfishHud] = useState<GoldfishHudState | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -70,6 +73,20 @@ export default function App({ controller = null }: AppProps) {
     const approachScene = new ApproachScene(renderer)
     const scenes = new SceneManager(events, input)
     scenes.register(approachScene)
+
+    // --- 金魚すくいシーンの登録・配線(合成点 / T-006) ---
+    // GoldfishScene は自前で GoldfishSession(T-005)を駆動し、HUD 状態を setHudListener で
+    // React へ橋渡しする(EventBus 非経由 = GameEvents 型を増やさない / core 不変)。
+    const goldfishScene = new GoldfishScene(renderer)
+    goldfishScene.setHudListener((state) => setGoldfishHud(state))
+    scenes.register(goldfishScene)
+
+    // セッション終了 → approach へ戻す(T-007 の result 未実装のための暫定。
+    // SceneManager に goldfish→approach を一時許可済み。T-007 で result 経由へ差し替える)。
+    // finished の payload(caught/reason)は T-007 の result が受け取る接続点になる。
+    const unsubscribeFinished = events.on('goldfish:finished', () => {
+      if (scenes.current === 'goldfish') scenes.transition('approach')
+    })
 
     // --- 会話シーンの登録・配線(合成点 / D-008・T-004 段B) ---
     // 具象 DialogueController が注入されたときだけ DialogueScene を登録する。
@@ -97,19 +114,12 @@ export default function App({ controller = null }: AppProps) {
         // 既に dialogue を抜けていれば何もしない(重複発火・既遷移ガード)。
         if (scenes.current !== 'dialogue') return
         if (choiceId === 'play') {
-          // 「遊んでいく」→ goldfish(AC5)。goldfish は T-005/006 まで未登録のため throw する。
-          // コンソール例外を出さず(AC5)、安全に approach へフォールバックする。ダミー画面は作らない。
-          // T-006 で goldfish 登録後は transition('goldfish') が成功し、本フォールバックは不要になる
-          // (引き継ぎ: 報告の「残課題」参照)。
-          try {
-            scenes.transition('goldfish')
-            return
-          } catch {
-            // 未登録: 下のフォールバックで approach へ。
-          }
+          // 「遊んでいく」→ goldfish(T-006 で本結線。GoldfishScene 登録済みなので本遷移する)。
+          scenes.transition('goldfish')
+          return
         }
-        // 「またあとで」、および goldfish 未登録時の「遊んでいく」: 参道へ戻る。
-        if (scenes.current === 'dialogue') scenes.transition('approach')
+        // 「またあとで」: 参道へ戻る。
+        scenes.transition('approach')
       }
       unsubscribeChoice = events.on('dialogue:choice', ({ choiceId }) => routeChoice(choiceId))
     }
@@ -141,11 +151,14 @@ export default function App({ controller = null }: AppProps) {
       if (statsTimer !== 0) window.clearInterval(statsTimer)
       window.removeEventListener('resize', handleResize)
       unsubscribeChoice?.()
+      unsubscribeFinished()
       loop.stop()
       input.detach()
       approachScene.dispose()
+      goldfishScene.dispose()
       renderer.dispose()
       setEventBus(null)
+      setGoldfishHud(null)
     }
   }, [controller])
 
@@ -154,7 +167,9 @@ export default function App({ controller = null }: AppProps) {
       <canvas ref={canvasRef} className="game-canvas" />
       {/* React HUD オーバーレイ(D-008)。EventBus 由来の会話表示状態を購読し、
           段B の会話オーバーレイ(ui/Dialogue)をマウントする枠。controller 未注入(段A)時は何も描画しない。 */}
-      {eventBus !== null && <HudRoot events={eventBus} controller={controller} />}
+      {eventBus !== null && (
+        <HudRoot events={eventBus} controller={controller} goldfishHud={goldfishHud} />
+      )}
       {debugStats !== null && (
         <div className="debug-overlay" role="status">
           <span>FPS {debugStats.fps.toFixed(1)}</span>

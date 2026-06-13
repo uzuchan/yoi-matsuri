@@ -11,7 +11,7 @@
 | P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | COMPLETE |
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer(+technical-architectが基盤) | critical-reviewer + interaction-designer | 3 | COMPLETE |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer + game-director | 4, 5, 6 | COMPLETE |
-| P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | PENDING |
+| P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | COMPLETE |
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | PENDING |
 | P1 | T-008 | 音響一式(環境音レイヤー+効果音+AudioEngine) | audio-director | critical-reviewer | 9(音響) | PENDING |
 | P1 | T-009 | 雰囲気仕上げ(花火・群衆の揺れ・歩行ボブ・演出磨き) | environment-engineer | art-director + critical-reviewer | 9 | PENDING |
@@ -250,4 +250,50 @@ Risks：
   (2) 金魚AIの乱数で非決定論化しテスト不能 → seeded PRNGで決定論化(seedを注入可能に)
   (3) speed²ダメージの単位/スケール誤り → speed[m/s]²×coeff[pt·s²/m²]=pt/s の次元を合わせ、テストで「1m/sで〜pt/s」を固定
 Status：COMPLETE(2026-06-14、ループ1。レビュー: critical-reviewer=APPROVE(REV-T-005-1) + game-director=合格。設計判断を裁定しGDD v1.1へ反映=複数同時捕獲可・結果数=secured基準・§4.6手触り指針。新規52テスト/計162件。公開API: GoldfishSession.update(dt,input)→GoldfishEvent[] + snapshot()。T-006が描画/HUD/EventBus発火を担う)
+```
+
+---
+
+## T-006 詳細タスクカード(6番目の実装タスク — 金魚すくいを遊べる状態にする)
+
+VS要件4「金魚すくいを遊べる」・5「ポイ速度・水の抵抗・紙耐久が結果に影響」・6「すくう/破れる」の**描画と統合**。T-005の純TSロジック(GoldfishSession)を画面に出し、操作・HUD・音響イベント発火・会話からの遷移を結線して、実際に遊べる状態にする。
+
+```
+Task ID：T-006
+Owner：gameplay-engineer
+Reviewer：art-director(視覚) + critical-reviewer(総合)
+Goal：会話「遊んでいく」から金魚すくいシーンへ入り、マウス/キーボードでポイを操作して金魚をすくい、紙が破れるか時間切れ/退出でセッションが終わるまでを、ART準拠の描画とHUD・音響イベント発火つきで遊べるようにする
+User Story：プレイヤーとして、屋台で実際に金魚すくいを遊び、そっと動かして金魚をすくい、雑に動かすと紙が破れる手応えを体験したい(VS要件4・5・6)
+Inputs：docs/GAME_DESIGN_DOCUMENT.md(§4 全体, §4.1構成=俯瞰水槽・お椀, §4.2操作モデル, §4.6手触り/破損予兆の描画要請, §5 HUD), docs/ART_DIRECTION.md(§2 水面#1e4d6b op0.85・金魚#e84a30(emissive#3a0f08弱)/白#f5f0e8・ポイ枠#e8c87a/紙#f5f0e8(耐久で op0.95→0.4)・UIテキスト#f5f0e8, §5カメラ goldfish=俯角70°固定・水槽が画面70%), docs/INTERACTION_SPEC.md(§3.3 goldfish入力表=マウス追従/押下沈める/解放持ち上げ/お椀上クリックで確保/矢印・Spaceの代替/Esc退出, §4文言 goldfish開始ヒント), docs/AUDIO_SPEC.md(§4 poi-dip/poi-lift/catch/secure/fish-escape/paper-warning/paper-tear), docs/TECHNICAL_ARCHITECTURE.md(§3 GameEvents/Scene/合成点App), reports/CURRENT_STATUS.md(§0-5 T-005公開API/座標系/イベント写像)
+Editable Files：
+  - natsumatsuri-interactive/src/scenes/goldfish/(新規。GoldfishScene: 水槽・ポイ・金魚・お椀の描画、GoldfishSession駆動、入力組み立て、GoldfishEvent→EventBus/sfx写像、俯角70°カメラ)
+  - natsumatsuri-interactive/src/ui/(GoldfishHud: 残時間・耐久ゲージ・確保数・開始ヒント。HudRootに会話と排他で組み込む)
+  - natsumatsuri-interactive/src/App.tsx(合成点: GoldfishScene生成・登録・注入、会話「遊んでいく」→goldfishの本結線=routeChoiceのフォールバックtry/catch撤去、goldfish:finished→遷移)
+  - natsumatsuri-interactive/src/core/SceneManager.ts(**この1行のみLead承認の例外**: ALLOWED_TRANSITIONSのgoldfishに 'approach' を一時追加し goldfish→approach の退出を許可。result(T-007)未実装の間の行き止まり回避。コメントで「T-007でresult経由に差し替え」を明記。これ以外のcore変更は禁止)
+  - natsumatsuri-interactive/src/index.css(goldfish HUDのスタイル)
+  - natsumatsuri-interactive/tests/(goldfish統合の入力組み立て・イベント写像の純TS部分)、natsumatsuri-interactive/e2e/(goldfishのE2E)
+Forbidden Changes：
+  - src/game/goldfish/(T-005の確定ロジック。利用のみ。バランス変更はGDD経由)
+  - src/world/, src/scenes/approach(プロンプト等は触らない), src/scenes/dialogue/, src/audio/, src/core/(SceneManagerの上記1行を除く), _parallel-r3f/, docs/**(疑義は報告), package.json, 設定ファイル
+  - 新規依存追加(three/Reactのみ)。git commit/push
+  - スコープ外: 結果画面・店主の反応・報酬(T-007)、音の実装(T-008。本タスクはsfx:play発火まで)、花火・仕上げ(T-009)
+Acceptance Criteria：
+  AC1. 会話「遊んでいく」を選ぶと goldfish シーンへ遷移する(App.routeChoiceのgoldfish未登録フォールバックを撤去し本遷移にする)。dialogue→goldfish が実際に動く
+  AC2. 俯瞰の水槽(楕円・水面#1e4d6b op0.85)が画面の約70%を占め、カメラは俯角70°固定(ART §5)。お椀(確保先)が見える。GoldfishSessionのbounds(楕円rx0.6/rz0.45)と描画が一致
+  AC3. ポイ描画: 枠#e8c87a+紙#f5f0e8。GoldfishSessionのpoi状態(position/submerged/depth)に追従。**紙の不透明度を耐久で op0.95→0.4 に変化**させ、残30以下で見た目劣化(透け/ヨレ)を段階的に強める(GDD §4.6/§5の破損予兆)
+  AC4. 金魚描画: GoldfishSessionのfish[]を#e84a30(emissive#3a0f08弱)+白模様#f5f0e8で、heading方向に向けて描く。捕獲(onPoi)/逃避(fleeing)/確保(secured)の状態が見た目で分かる(ポイに乗る/跳ねる等)
+  AC5. 入力(INTERACTION_SPEC §3.3, マウス・キーボード両完結): マウス移動→カーソルを水面へ投影しtargetに、左押下→submerge、左解放→持ち上げ(捕獲判定)、お椀上でクリック→secure。矢印キーでポイ移動、Spaceで沈める/持ち上げトグル、Escで退出(quit)。毎フレーム GoldfishSession.update(dt,input) を駆動
+  AC6. HUD(GoldfishHud, ART §2準拠): 残時間・ポイ耐久ゲージ(+紙の見た目劣化と連動)・確保数(お椀の金魚)。開始時2秒「そっと動かそう。速く動かすと紙が破れる」(INTERACTION_SPEC §4文言)。マウス不要で読める。会話オーバーレイとは排他表示
+  AC7. 音響イベント発火(発火のみ。音はT-008): GoldfishEvent記述子と入力エッジを EventBus/sfx:play へ写像 — poi-dip(沈めるエッジ)/poi-lift(持ち上げエッジ)/catch/secure/fish-escape/paper-warning/paper-tear、および goldfish:caught{total}/goldfish:poi-torn/goldfish:finished{caught,reason}。二重発火しない
+  AC8. 終了とフロー: 紙破損(torn)/時間切れ(timeout)/Esc退出(quit)でセッション終了し goldfish:finished を発火。終了後 approach へ戻る(T-007のresult未実装のため暫定。SceneManagerにgoldfish→approachを一時許可。コメントでT-007差し替えを明記)。行き止まりなし
+  AC9. 性能: build+preview(実GPU)で金魚すくいプレイ中の?debug=1 FPSが50以上、trianglesが予算50k内、動的ライト6灯以内。update内のフレーム毎アロケーションを避ける
+  AC10. 品質ゲートG1全通過(typecheck/lint/test/build)+ E2E(近接→E→会話→遊んでいく→金魚すくい操作→退出/終了→approach復帰、console error0)。新規依存なし。TODO/ダミーなし。reports/screenshots/T-006-goldfish.png 保存(水槽・ポイ・金魚・HUDが映る)
+Tests：tests/ に入力組み立て(カーソル→水面投影・secure判定の純TS部分)・GoldfishEvent→EventBus/sfx写像のunit test。e2e/goldfish.spec.ts。コマンド: typecheck && lint && test && build && test:e2e
+Evidence：4ゲート+e2e結果、FPS実測(GPUフラグ明記)・triangles値、reports/screenshots/T-006-goldfish.png、会話→金魚すくい→終了→復帰の通し確認手順
+Risks：
+  (1) カーソル→水面投影(俯角70°カメラ)のずれ → レイキャストか平面投影で水面平面に正確に当てる。テストで投影関数を固定
+  (2) GoldfishEventとエッジ発火の二重/取りこぼし → 発火は単一経路、submergeエッジはT-004同様の立ち上がり検出。e2eとunitで確認
+  (3) 紙の不透明度劣化が水中で見えにくい → op範囲と劣化表現をART §2/§4.6に合わせ、art-director視覚レビュー
+  (4) goldfish→approach一時許可がT-007で残置 → コメント明記し、T-007でresult経由へ必ず差し替え(CURRENT_STATUSにも記録)
+Status：COMPLETE(2026-06-14、ループ1。レビュー: critical-reviewer=APPROVE(REV-T-006-1) + art-director=合格(ART §2に器の色/goldfishフォグ密度0.12/紙劣化式を明文化)。新規29テスト/計191件・e2e8件。実GPU FPS120/triangles2812。core/SceneManagerにgoldfish→approach一時許可(T-007でresult経由へ差し替え))
 ```

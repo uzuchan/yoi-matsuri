@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react'
 import type { DialogueController, DialogueView, EventBus } from '../core'
+import type { GoldfishHudState } from '../scenes/goldfish/GoldfishScene'
 import { Dialogue } from './Dialogue'
+import { GoldfishHud } from './GoldfishHud'
 
 /**
  * 段B(gameplay-engineer)が実装する会話ボックスコンポーネントの props 契約。
@@ -34,6 +36,11 @@ interface HudRootProps {
    * null の間は会話オーバーレイを描画しない(土台のみ。ダミーUIは出さない)。
    */
   controller: DialogueController | null
+  /**
+   * 金魚すくい HUD の表示状態(T-006)。GoldfishScene が setHudListener で合成点(App.tsx)へ流し、
+   * App が React state にして渡す(EventBus 非経由。会話 HUD と排他で表示する)。
+   */
+  goldfishHud: GoldfishHudState | null
 }
 
 /**
@@ -48,7 +55,7 @@ interface HudRootProps {
  *   2. 下の「描画スロット」コメント箇所に <Dialogue view={...} controller={controller} events={events} /> を置く
  *   3. App.tsx で具象 DialogueController を生成し HudRoot の controller prop と DialogueScene へ注入する
  */
-export function HudRoot({ events, controller }: HudRootProps) {
+export function HudRoot({ events, controller, goldfishHud }: HudRootProps) {
   const [view, setView] = useState<DialogueView | null>(null)
 
   useEffect(() => {
@@ -72,6 +79,9 @@ export function HudRoot({ events, controller }: HudRootProps) {
   // 段Bで <Dialogue> を有効化するための条件(view/controller/events を消費する真の配線)。
   const showDialogue = controller !== null && view !== null && view.active
 
+  // 金魚 HUD は「金魚すくい active」かつ「会話オーバーレイを出していない」ときだけ描画する(排他)。
+  const showGoldfishHud = goldfishHud !== null && goldfishHud.active && !showDialogue
+
   return (
     <div className="hud-root" aria-live="polite">
       {/*
@@ -80,6 +90,8 @@ export function HudRoot({ events, controller }: HudRootProps) {
         view / controller は showDialogue が true のとき非 null が保証される。
       */}
       {showDialogue && <Dialogue view={view} controller={controller} events={events} />}
+      {/* 金魚すくい HUD(T-006)。会話と排他(showDialogue 中は出さない)。 */}
+      {showGoldfishHud && <GoldfishHud state={goldfishHud} />}
     </div>
   )
 }

@@ -31,7 +31,7 @@ export interface Scene {
 const ALLOWED_TRANSITIONS: Readonly<Record<SceneId, readonly SceneId[]>> = {
   approach: ['dialogue'],
   dialogue: ['approach', 'goldfish'],
-  goldfish: ['result'],
+  goldfish: ['result', 'approach'], // T-006 一時措置: result(T-007)未実装の間 goldfish→approach の退出を許可。T-007 で result 経由に差し替える
   result: ['approach'],
 }
 
