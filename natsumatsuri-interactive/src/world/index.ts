@@ -24,7 +24,23 @@ export {
 } from './lanterns'
 export type { LanternAnchor } from './lanterns'
 export { createTorii } from './torii'
-export { createStall, STALL_POSITION, STALL_BULB_HEIGHT } from './stall'
+export { createStall, STALL_POSITION, STALL_ID, STALL_BULB_HEIGHT } from './stall'
 export { createCrowd, computeCrowdPlacements } from './crowd'
 export type { CrowdPlacement } from './crowd'
 export { createLighting } from './lighting'
+
+// T-003: プレイヤー造形・移動/近接の純TSロジック・プロンプトラベル。
+export { createPlayer } from './player'
+export {
+  WALK_SPEED,
+  WALK_BOUNDS,
+  keyboardMoveVector,
+  integrateMovement,
+  clampToBounds,
+  mouseForwardVector,
+} from './movement'
+export type { Vec2, WalkBounds } from './movement'
+export { ProximityTracker, INTERACT_RADIUS } from './proximity'
+export type { ProximityEdge } from './proximity'
+export { createPromptLabel } from './promptLabel'
+export type { PromptLabel } from './promptLabel'

@@ -28,6 +28,12 @@ const ROOF_HEIGHT = 0.5
  */
 export const STALL_POSITION = { x: 5, z: -26 } as const
 
+/**
+ * 屋台の識別子(GameEvents の stall:approach / stall:leave のペイロード stallId)。
+ * Vertical Slice では金魚すくい屋台 1 軒のみ。複数屋台はスコープ外(BACKLOG Icebox)。
+ */
+export const STALL_ID = 'goldfish-stall' as const
+
 /** 屋台の店主シルエットの立ち位置(屋台内側)。 */
 export const STALL_BULB_HEIGHT = POST_HEIGHT - 0.3
 

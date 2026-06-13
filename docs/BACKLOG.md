@@ -8,7 +8,7 @@
 |---|---|---|---|---|---|---|
 | P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | COMPLETE |
 | P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | COMPLETE |
-| P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | PENDING |
+| P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | IN_REVIEW |
 | P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer | critical-reviewer | 3 | PENDING |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | PENDING |
@@ -108,4 +108,47 @@ Risks：
   (2) 提灯/群衆をInstancedMeshにすると個体の揺れ実装が複雑 → 揺れはinstanceMatrixの毎フレーム更新で実装。重い場合は揺れ対象を可視範囲に限定し報告
   (3) 三角形数が予算超過 → セグメント数を落とす(球の分割等)。50k超なら報告しart-directorと相談
 Status：COMPLETE(2026-06-13、ループ2で完了。レビュー: critical-reviewer=APPROVE / art-director=無条件合格。reports/reviews/REV-T-002-1.md)
+```
+
+---
+
+## T-003 詳細タスクカード(3番目の実装タスク)
+
+```
+Task ID：T-003
+Owner：environment-engineer
+Reviewer：critical-reviewer(+ プレイヤー造形についてart-directorの視覚所見)
+Goal：プレイヤーが夜の参道を歩いて金魚すくい屋台へ近づけるようにする。三人称追従カメラ、キーボード/マウス両対応の移動、屋台への近接判定と「E: 屋台をのぞく」プロンプト表示までを実装する
+User Story：プレイヤーとして、参道を自分で歩いて屋台に近づきたい。なぜなら「屋台を見つけて立ち寄る」という体験の入口だから(VS要件1・2)
+Inputs：docs/INTERACTION_SPEC.md(§1原則, §3.1 approachの入力表とマウスのみ操作の保証, §4 プロンプト文言), docs/GAME_DESIGN_DOCUMENT.md(§2 参道=幅8m奥行60m・walkSpeed 3.0m/s・interactRadius 3.0m), docs/ART_DIRECTION.md(§5カメラ approach: 後方5m/高さ3.2m/俯角15°/追従lag0.15s/FOV55°, §2 UIテキスト色 #f5f0e8), docs/TECHNICAL_ARCHITECTURE.md(§3 SceneContext=enter(ctx)でctx.input/ctx.eventsが使える, GameEventsのstall:approach/stall:leave), reports/CURRENT_STATUS.md(§0-2 T-002引き継ぎ: STALL_POSITION={x:5,z:-26}, world座標系)
+Editable Files：
+  - natsumatsuri-interactive/src/scenes/approach/ApproachScene.ts(プレイヤー・追従カメラ・移動・近接判定・プロンプトの統合。enter(ctx)でctx.input/ctx.eventsを使う)
+  - natsumatsuri-interactive/src/world/(新規: player.ts プレイヤー造形, movement.ts 移動/クランプの純TSロジック, proximity.ts 近接enter/leave判定, promptLabel.ts ワールド空間プロンプトラベル など。既存ファイルへの追記も可)
+  - natsumatsuri-interactive/tests/world/(移動・クランプ・近接判定のunit test)
+  - reports/screenshots/T-003-approach.png
+Forbidden Changes：
+  - src/core/(EventBus/SceneManager等。GameEventsへのイベント追加が必要になったら実装せず報告。T-003は既存のstall:approach/stall:leaveのみ使う)
+  - src/ui/(React HUDはgameplay-engineerの所有。プロンプトはapproachシーン内のワールド空間ラベル=Sprite等で実装し、src/ui/には作らない)
+  - src/game/, src/audio/, src/scenes/goldfish/, src/App.tsx, docs/**, .claude/**, package.json, 設定ファイル, git commit/push
+  - 新規依存追加(threeのみ)
+  - スコープ外: E押下→会話への遷移と会話画面(T-004の所有)。金魚すくい(T-005/006)。音響(T-008)。花火・歩行アニメ(T-009)
+Acceptance Criteria：
+  AC1. プレイヤーの最小限の可視表現(パレット整合の単純な人型。ART未規定のためart-director所見を仰ぐ)がApproachSceneに存在し、追従カメラがART §5どおり(プレイヤー後方5m・高さ3.2m・俯角15°・追従lag0.15s・FOV55°)に追従する
+  AC2. キーボード移動: W/↑前進・S/↓後退・A/←・D/→で移動、walkSpeed 3.0m/s。dtベースでフレームレート非依存。プレイヤーは歩行可能範囲(参道 幅8m=x∈[-4,4]、z は入口付近〜鳥居(z=-60)手前)にクランプされ、範囲外・鳥居の先へ出られない
+  AC3. マウスのみで屋台へ到達できる(INTERACTION_SPEC §3.1): 左ボタン押下中は前進し、進行方向が屋台方向へ緩やかに収束する。これによりキーボードを使わずに屋台の近接圏へ入れる
+  AC4. マウス移動で視線がわずかに追従する(±5°程度。過剰な回転をしない)
+  AC5. 近接判定: プレイヤーがSTALL_POSITIONからinteractRadius 3.0m以内に入った瞬間に 'stall:approach' {stallId} を1回だけ発火、離れた瞬間に 'stall:leave' {stallId} を1回だけ発火する(滞在中・圏外滞在中に連続発火しない)。stallIdは定数化する
+  AC6. プロンプト「E: 屋台をのぞく」(INTERACTION_SPEC §4の文言そのまま)を、近接圏内で表示・圏外で非表示にする(0.2sフェード)。ワールド空間ラベル(Sprite等、テキストはcanvasテクスチャで生成)としてapproachシーン内に実装。色はUIテキスト #f5f0e8。src/ui/は使わない
+  AC7. 移動積分・クランプ・近接enter/leaveエッジ判定が純TS関数として分離され、unit testがある(dt積分の正しさ、境界クランプ、近接の単発発火=同一状態での重複発火がないこと)
+  AC8. E押下→会話遷移は意図的にT-004へ繰り延べる。T-003ではE押下に遷移を割り当てない(ダミーの会話画面・未接続画面を作らない)。この繰り延べをコードコメントと報告に明記する
+  AC9. 性能維持: build+preview(実GPU)で ?debug=1 のFPSが50以上、trianglesが予算50k以内(プレイヤー追加は軽微)。update内でのフレーム毎アロケーションを行わない
+  AC10. 品質ゲートG1全通過(typecheck/lint/test/build エラー0)。TODO/ダミー残置なし。新規依存なし。reports/screenshots/T-003-approach.png に「プレイヤーが屋台近くでプロンプト表示中」の画を保存
+Tests：tests/world/ に movement(dt積分・クランプ)、proximity(enter/leaveの単発発火・境界値)のunit test。コマンド: npm run typecheck && npm run lint && npm run test && npm run build、目視はbuild+preview
+Evidence：4コマンドの実行ログ、FPS実測値と計測コマンド(GPU有効フラグ含む)、reports/screenshots/T-003-approach.png、近接イベント発火の確認方法と結果
+Risks：
+  (1) マウスのみ前進の「屋台方向へ収束」が強すぎてキーボード移動と干渉 → 収束はマウス押下時のみ適用し報告に係数を記載
+  (2) 追従カメラのlagでカメラ酔い/遅延過大 → lag0.15sを厳守、実機で確認
+  (3) プロンプトのワールド空間ラベルがフォグで沈む/常に正面を向かない → Spriteは常時カメラ向き、fog:falseで視認性確保。最終設定を報告
+  (4) プレイヤー造形がART未規定 → 最小・パレット整合で実装し、art-directorの所見を仰ぐ(必要ならART §にプレイヤー項を追記する別タスク化)
+Status：IN_REVIEW(2026-06-13 実装・実装者自己検証完了=unit test 82件/build成功/実GPU FPS120。ただしR3F並行実装の混入ブロッカーで一時中断 → 系統Bを_parallel-r3f/へ退避し系統A復元済み。critical-reviewerレビューはアーキ方針確定後に実施)
 ```

@@ -1,5 +1,5 @@
 import { Vector2 } from 'three'
-import { describe, expect, it, vi } from 'vitest'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ApproachScene } from '../../src/scenes/approach/ApproachScene'
 import { createCrowd } from '../../src/world/crowd'
 import { createGround } from '../../src/world/ground'
@@ -10,6 +10,47 @@ import { createStall } from '../../src/world/stall'
 import { createTorii } from '../../src/world/torii'
 import { computeLanternAnchors, pickRepresentativeLanterns } from '../../src/world/lanterns'
 import type { WorldObject } from '../../src/world/types'
+
+/**
+ * ApproachScene はワールド空間プロンプト(promptLabel)生成のため canvas を、
+ * 追従カメラのマウス視線追従のため window.innerWidth を参照する。
+ * unit test は DOM 非依存(node 環境)のため、ここで最小モックを与える
+ * (vitest.config.ts の方針「DOMが必要な箇所はテスト側で最小モック」に従う)。
+ */
+beforeAll(() => {
+  const fake2dContext = {
+    clearRect: () => {},
+    strokeText: () => {},
+    fillText: () => {},
+    font: '',
+    textAlign: '',
+    textBaseline: '',
+    lineWidth: 0,
+    strokeStyle: '',
+    fillStyle: '',
+  }
+  const g = globalThis as unknown as {
+    document?: unknown
+    window?: unknown
+  }
+  g.document = {
+    createElement: (tag: string) => {
+      if (tag !== 'canvas') throw new Error(`unexpected createElement(${tag})`)
+      return {
+        width: 0,
+        height: 0,
+        getContext: (type: string) => (type === '2d' ? fake2dContext : null),
+      }
+    },
+  }
+  g.window = { innerWidth: 1280, innerHeight: 720 }
+})
+
+afterAll(() => {
+  const g = globalThis as unknown as { document?: unknown; window?: unknown }
+  delete g.document
+  delete g.window
+})
 
 /**
  * ApproachScene の構築時に必要な WebGLRenderer の最小モック。
@@ -79,10 +120,14 @@ describe('ApproachScene.dispose()(AC9)', () => {
     const disposeSpies: ReturnType<typeof vi.spyOn>[] = []
     threeScene.traverse((obj) => {
       const o = obj as {
+        type?: string
         geometry?: { dispose: () => void }
         material?: { dispose: () => void }
       }
-      if (o.geometry && typeof o.geometry.dispose === 'function') {
+      // Sprite(プロンプトラベル)の geometry は three 内部の共有シングルトンで、
+      // 個別 dispose は禁止(他 Sprite を壊す)。所有リソースではないので検証対象から除く。
+      const isSprite = o.type === 'Sprite'
+      if (!isSprite && o.geometry && typeof o.geometry.dispose === 'function') {
         disposeSpies.push(vi.spyOn(o.geometry, 'dispose'))
       }
       if (o.material && typeof o.material.dispose === 'function') {
