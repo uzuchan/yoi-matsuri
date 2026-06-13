@@ -41,7 +41,15 @@ function createFakeController() {
       calls.push('advance')
       return advanceOutcome.value
     },
-    moveFocus: (delta: number) => calls.push(`moveFocus:${delta}`),
+    // 実 controller 同様、フォーカスを選択肢範囲内でクランプ移動する(端では動かない)。
+    // これにより DialogueScene の「focusedChoiceIndex が実際に変化した時だけ select を鳴らす」分岐を
+    // フェイクでも忠実に検証できる。
+    moveFocus: (delta: number) => {
+      calls.push(`moveFocus:${delta}`)
+      if (view.choices.length === 0) return
+      const next = Math.max(0, Math.min(view.choices.length - 1, view.focusedChoiceIndex + delta))
+      view = { ...view, focusedChoiceIndex: next }
+    },
     focus: (index: number) => calls.push(`focus:${index}`),
     confirm: () => {
       calls.push('confirm')
@@ -189,7 +197,7 @@ describe('DialogueScene(段A 駆動ロジック)', () => {
     expect(transition).toHaveBeenCalledWith('approach')
   })
 
-  it('選択確定(outcome=choice)で dialogue:choice を発火し approach へ遷移する', () => {
+  it('選択確定(outcome=choice)で dialogue:choice を発火するが、自身では遷移しない(遷移オーナーは App.routeChoice)', () => {
     const { scene, ctx, events, transition, setView, setConfirmOutcome, press } = setup()
     const choiceHandler = vi.fn()
     events.on('dialogue:choice', choiceHandler)
@@ -200,20 +208,65 @@ describe('DialogueScene(段A 駆動ロジック)', () => {
     press('Enter')
     scene.update(DT)
 
+    // 'dialogue:choice' は発火する。遷移は App.routeChoice が単一オーナーとして決めるため、
+    // DialogueScene は choice では transition しない(REV-T-004-1 Major-2: 二重遷移の解消)。
     expect(choiceHandler).toHaveBeenCalledWith({ choiceId: 'later' })
-    expect(transition).toHaveBeenCalledWith('approach')
+    expect(transition).not.toHaveBeenCalled()
   })
 
-  it('requestGoldfish: goldfish 未登録(ハンドラが throw)でも例外を投げず approach へフォールバックする', () => {
-    const { scene, ctx, transition } = setup()
+  it('SFX(AC7): セリフ送りで dialogue-next を発火する(キーボード経路。マウス経路と一致)', () => {
+    const { scene, ctx, events, setAdvanceOutcome, press } = setup()
+    const sfx = vi.fn()
+    events.on('sfx:play', sfx)
     scene.enter(ctx)
-    transition.mockImplementation((to: string) => {
-      if (to === 'goldfish') throw new Error('未登録(T-005/006 未実装)')
+    setAdvanceOutcome({ kind: 'continue' })
+
+    press('Enter')
+    scene.update(DT)
+
+    expect(sfx).toHaveBeenCalledWith({ name: 'dialogue-next' })
+  })
+
+  it('SFX(AC7): フォーカスが実際に動いた時だけ select を発火する(同一indexでは鳴らさない)', () => {
+    const { scene, ctx, events, setView, press, release } = setup()
+    const sfx = vi.fn()
+    events.on('sfx:play', sfx)
+    scene.enter(ctx)
+    setView({
+      typing: false,
+      choices: [
+        { id: 'play', label: '遊んでいく' },
+        { id: 'later', label: 'またあとで' },
+      ],
+      focusedChoiceIndex: 0,
     })
 
-    expect(() => scene.requestGoldfish()).not.toThrow()
-    expect(transition).toHaveBeenCalledWith('goldfish')
-    expect(transition).toHaveBeenLastCalledWith('approach')
+    // フォーカスが 0→1 へ動く(↓): select 発火。
+    press('ArrowDown')
+    scene.update(DT)
+    expect(sfx).toHaveBeenCalledWith({ name: 'select' })
+
+    // 末尾(index=1)で更に ↓ を押してもクランプで動かない → 鳴らさない。
+    sfx.mockClear()
+    release('ArrowDown')
+    scene.update(DT) // エッジをリセット
+    press('ArrowDown')
+    scene.update(DT)
+    expect(sfx).not.toHaveBeenCalledWith({ name: 'select' })
+  })
+
+  it('SFX(AC7): 選択確定で confirm を発火する(キーボード経路。マウス経路と一致)', () => {
+    const { scene, ctx, events, setView, setConfirmOutcome, press } = setup()
+    const sfx = vi.fn()
+    events.on('sfx:play', sfx)
+    scene.enter(ctx)
+    setView({ typing: false, choices: [{ id: 'later', label: 'またあとで' }], focusedChoiceIndex: 0 })
+    setConfirmOutcome({ kind: 'choice', choiceId: 'later' })
+
+    press('Enter')
+    scene.update(DT)
+
+    expect(sfx).toHaveBeenCalledWith({ name: 'confirm' })
   })
 
   it('表示状態が変化したフレームだけ dialogue:view-changed を発火する(無変化では再発火しない)', () => {

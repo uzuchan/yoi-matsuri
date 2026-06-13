@@ -112,6 +112,24 @@ export class ApproachScene implements Scene {
   private readonly desiredCamPos = new Vector3()
   private readonly lookTarget = new Vector3()
 
+  // --- T-004: 近接中の E/左クリック → 会話(dialogue)遷移の配線 ---
+  /** プレイヤーが屋台の近接圏内にいるか(updateProximity が維持)。 */
+  private inProximity = false
+  /** E キーの立ち上がりエッジ検出用(前フレーム押下状態)。 */
+  private prevInteractDown = false
+  /** マウス左ボタンの立ち上がりエッジ検出用(前フレーム押下状態)。 */
+  private prevMousePressed = false
+  /**
+   * 会話シーンへの遷移ハンドラ。App.tsx(合成点)が SceneManager.transition('dialogue') を
+   * 束縛して注入する。Scene は SceneManager を直接参照しない core 設計(DialogueScene と同方式)。
+   */
+  private transitionHandler: ((to: 'dialogue') => void) | null = null
+
+  /** App.tsx(合成点)から会話遷移ハンドラを注入する(T-004)。 */
+  setTransitionHandler(handler: (to: 'dialogue') => void): void {
+    this.transitionHandler = handler
+  }
+
   constructor(renderer: WebGLRenderer) {
     this.renderer = renderer
     this.scene = new ThreeScene()
@@ -171,9 +189,20 @@ export class ApproachScene implements Scene {
     this.proximity.reset()
     this.prompt.setVisible(false)
     this.lookYaw = 0
+    this.inProximity = false
+    // 会話から approach へ戻った直後に、まだ押されている E/クリックを誤って
+    // 再遷移に拾わないよう、エッジ基準を現在の押下状態へ揃える(立ち上がりのみ反応)。
+    this.prevInteractDown = ctx.input.isDown('KeyE')
+    this.prevMousePressed = ctx.input.mouse.pressed
   }
 
   exit(): void {
+    // INTERACTION_SPEC §3.2: 会話(dialogue)へ遷移すると DialogueScene が本シーンの world を
+    // 背景描画するが、本シーンの update は回らないためプロンプトのフェードが進まない。
+    // exit 時に近接プロンプトを即時非表示にして、会話UIと重ならないようにする
+    // (屋台・店主・提灯などのワールド造形はそのまま見え続ける。プロンプトのみ消す)。
+    // approach 復帰時は enter() で再び非表示状態へリセットし、近接判定で再表示する。
+    this.prompt.setVisible(false, true)
     // シーンは常駐し再入場可能。入力ハンドルは enter で取り直す。GPU解放は dispose で行う。
     this.events = null
     this.input = null
@@ -261,18 +290,43 @@ export class ApproachScene implements Scene {
   private updateProximity(): void {
     const edge = this.proximity.update(this.playerPos, STALL_POSITION)
     if (edge === 'enter') {
+      this.inProximity = true
       this.events?.emit('stall:approach', { stallId: STALL_ID })
       this.prompt.setVisible(true)
     } else if (edge === 'leave') {
+      this.inProximity = false
       this.events?.emit('stall:leave', { stallId: STALL_ID })
       this.prompt.setVisible(false)
     }
     // 'none' は何もしない(滞在中・圏外滞在中の連続発火を起こさない)。
 
-    // E押下 → 会話(dialogue)への遷移は T-004(gameplay-engineer)の所有のため、
-    // ここでは意図的に未実装。AC8: ダミーの会話/未接続画面を作らない。
-    // T-004 では stall:approach を購読してプロンプト点灯を扱い、近接中の E/左クリックで
-    // SceneManager.transition('dialogue') を行う(引き継ぎは報告参照)。
+    // T-004: 近接圏内で E または左クリックの立ち上がりエッジ → 会話(dialogue)へ遷移する
+    // (INTERACTION_SPEC §3.1)。圏外では何も起きない(AC1)。エッジ検出は毎フレーム無条件に
+    // 評価し、評価漏れによる立ち上がりずれを避ける。遷移は合成点で束縛したハンドラ経由
+    // (Scene は SceneManager を直接参照しない core 設計 = DialogueScene と同方式)。
+    this.updateInteract()
+  }
+
+  /**
+   * 近接圏内での E / 左クリック(立ち上がりエッジ)で会話へ遷移する(T-004)。
+   * 'sfx:interact'(AUDIO_SPEC §4: 屋台インタラクト責任 = scenes/approach)を発火する。
+   */
+  private updateInteract(): void {
+    const input = this.input
+    if (!input) return
+
+    const interactDown = input.isDown('KeyE')
+    const interactEdge = interactDown && !this.prevInteractDown
+    this.prevInteractDown = interactDown
+
+    const mousePressed = input.mouse.pressed
+    const clickEdge = mousePressed && !this.prevMousePressed
+    this.prevMousePressed = mousePressed
+
+    if (this.inProximity && (interactEdge || clickEdge)) {
+      this.events?.emit('sfx:play', { name: 'interact' })
+      this.transitionHandler?.('dialogue')
+    }
   }
 
   // --- 追従カメラ(ART §5) ---

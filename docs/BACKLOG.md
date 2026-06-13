@@ -9,7 +9,7 @@
 | P0 | T-001 | 技術基盤(scripts/strict/テスト基盤/ゲームシェル) | technical-architect | critical-reviewer | 全部の前提 | COMPLETE |
 | P0 | T-002 | 夜の参道環境(提灯・鳥居・屋台・群衆・フォグ) | environment-engineer | art-director + critical-reviewer | 1, 9(視覚) | COMPLETE |
 | P0 | T-003 | プレイヤー移動・追従カメラ・屋台近接判定とプロンプト | environment-engineer | critical-reviewer | 1, 2 | COMPLETE |
-| P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer(+technical-architectが基盤) | critical-reviewer + interaction-designer | 3 | READY |
+| P0 | T-004 | 会話システム(ダイアログUI・店主会話・選択肢・遷移) | gameplay-engineer(+technical-architectが基盤) | critical-reviewer + interaction-designer | 3 | COMPLETE |
 | P0 | T-005 | 金魚すくいコアロジック(ポイ物理・水抵抗・紙耐久・金魚AI・判定。unit test必須) | gameplay-engineer | critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-006 | 金魚すくいシーン描画と統合(水槽・ポイ・金魚・HUD) | gameplay-engineer | art-director + critical-reviewer | 4, 5, 6 | PENDING |
 | P0 | T-007 | 結果画面・店主の反応・報酬・参道へ復帰 | gameplay-engineer | game-director + critical-reviewer | 7, 8 | PENDING |
@@ -210,5 +210,5 @@ Risks：
   (2) 背景world描画の共有でApproachScene/DialogueSceneの責務が混ざる → DialogueSceneはApproachSceneのrenderを呼ぶだけにし、worldの所有はApproachSceneのまま
   (3) React HUDとSceneManager状態の同期ズレ → EventBus単一経路で駆動、HudRootは購読のみ
   (4) 1文字送りのタイマーリーク → DialogueScene/コンポーネントのcleanupで解除
-Status：READY(段Aから着手)
+Status：COMPLETE(2026-06-13。段A基盤=technical-architect(f3a87b4)→段B実装=gameplay-engineer→ループ2でMajor2件(キーボードSFX/選択の二重遷移)+Minor(プロンプト残留)を修正。レビュー: critical-reviewer=APPROVE(REV-T-004-1差し戻し→REV-T-004-2解消確認) + interaction-designer=条件付き合格の指摘を解消。test110件/e2e6件。T-006でApp.routeChoiceのgoldfish未登録フォールバックtry/catchを本遷移に差し替える)
 ```

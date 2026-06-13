@@ -71,16 +71,47 @@ export default function App({ controller = null }: AppProps) {
     const scenes = new SceneManager(events, input)
     scenes.register(approachScene)
 
-    // --- 会話シーンの登録・配線(合成点 / D-008) ---
+    // --- 会話シーンの登録・配線(合成点 / D-008・T-004 段B) ---
     // 具象 DialogueController が注入されたときだけ DialogueScene を登録する。
     // - 背景描画のため ApproachScene 参照を注入(屋台が会話中も見える / AC2)。
     // - Scene は SceneManager を直接参照しない core 設計のため、遷移は合成点で束縛したハンドラ経由で行う。
-    // 段B(gameplay-engineer)はここへ具象 controller を渡し(<App controller={...}/>)、
-    // ApproachScene 側に「近接中の E/左クリックで transition('dialogue')」を足して動線を完成させる。
+    let unsubscribeChoice: (() => void) | null = null
     if (controller) {
       const dialogueScene = new DialogueScene(approachScene, controller)
+      // DialogueScene の遷移ハンドラ。合成点が SceneManager.transition を束縛する。
+      // DialogueScene が直接遷移するのは Esc 打ち切り(dialogue→approach)のみで、choice 後は遷移しない
+      // (choice の遷移は下記 routeChoice が単一オーナーとして決める / REV-T-004-1 Major-2)。
+      // よって二重遷移は起きず、ここは素のハンドラでよい(以前の try/catch 吸収は不要になった)。
       dialogueScene.setTransitionHandler((to) => scenes.transition(to))
       scenes.register(dialogueScene)
+
+      // ApproachScene の「近接中 E/左クリック → 会話」配線(T-004)。
+      approachScene.setTransitionHandler((to) => scenes.transition(to))
+
+      // 会話の選択確定(choiceId)に応じた遷移の単一オーナー(合成点 / REV-T-004-1 Major-2)。
+      // キーボード経路: DialogueScene が確定時に 'dialogue:choice' を発火する(自身では遷移しない)。
+      // マウス経路: ui/Dialogue が確定/締めセリフ送り切りで 'dialogue:choice' を発火する。
+      // どちらも同じ choiceId で本ハンドラへ集約し、choice に対する遷移はここだけが決める
+      // (二重遷移なし / INTERACTION_SPEC §1-3: 行き止まりなし)。
+      const routeChoice = (choiceId: string): void => {
+        // 既に dialogue を抜けていれば何もしない(重複発火・既遷移ガード)。
+        if (scenes.current !== 'dialogue') return
+        if (choiceId === 'play') {
+          // 「遊んでいく」→ goldfish(AC5)。goldfish は T-005/006 まで未登録のため throw する。
+          // コンソール例外を出さず(AC5)、安全に approach へフォールバックする。ダミー画面は作らない。
+          // T-006 で goldfish 登録後は transition('goldfish') が成功し、本フォールバックは不要になる
+          // (引き継ぎ: 報告の「残課題」参照)。
+          try {
+            scenes.transition('goldfish')
+            return
+          } catch {
+            // 未登録: 下のフォールバックで approach へ。
+          }
+        }
+        // 「またあとで」、および goldfish 未登録時の「遊んでいく」: 参道へ戻る。
+        if (scenes.current === 'dialogue') scenes.transition('approach')
+      }
+      unsubscribeChoice = events.on('dialogue:choice', ({ choiceId }) => routeChoice(choiceId))
     }
 
     scenes.start('approach')
@@ -109,6 +140,7 @@ export default function App({ controller = null }: AppProps) {
     return () => {
       if (statsTimer !== 0) window.clearInterval(statsTimer)
       window.removeEventListener('resize', handleResize)
+      unsubscribeChoice?.()
       loop.stop()
       input.detach()
       approachScene.dispose()

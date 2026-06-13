@@ -24,10 +24,14 @@ import type { ApproachScene } from '../approach/ApproachScene'
  * - 入力2経路の集約(D-008): キーボード(送り/選択/Esc)は本シーンが InputManager をポーリングして
  *   DialogueController へ渡す。クリックは React オーバーレイ(段B)が直接 controller を呼ぶ。
  *
- * goldfish 遷移の安全な扱い(AC5):
- * - goldfish シーンは T-005/T-006 で未実装。未登録シーンへ transition すると SceneManager が throw する。
- * - 段Aでは「遷移要求の発火点」を用意しつつ、コンソール例外を出さず暫定で approach へ戻す。
- *   ダミーの goldfish 画面は作らない(T-006 完了後にここを goldfish 遷移へ差し替える)。
+ * choice 後の遷移オーナーの単一化(REV-T-004-1 Major-2 対応):
+ * - 選択確定(choice 結末)時、本シーンは 'dialogue:choice' を発火するだけで自身では遷移しない。
+ *   choice に対する遷移(goldfish or approach)の決定権は App.tsx の 'dialogue:choice' 購読(routeChoice)に
+ *   一元化する。これによりキーボード/マウス両経路で遷移オーナーが App 側の1つに揃い、
+ *   「emit 後に自分でも transition して approach→approach の不正遷移を起こし try/catch で握り潰す」
+ *   という例外をフロー制御化した脆い実装(REV-T-004-1 Major-2)を解消する。
+ * - aborted(Esc 打ち切り)は dialogue→approach の正当な遷移なので、本シーンが直接 transition する。
+ *   goldfish 未登録時の安全フォールバック(AC5)も App.routeChoice 側が担う(本シーンは関与しない)。
  */
 export class DialogueScene implements Scene {
   readonly id = 'dialogue' as const
@@ -96,6 +100,12 @@ export class DialogueScene implements Scene {
 
     let outcome: DialogueOutcome = { kind: 'continue' }
 
+    // 操作フィードバック音(AC7 / INTERACTION_SPEC §3.2)。マウス経路(ui/Dialogue)と音・条件を揃え、
+    // 同じ操作なら入力デバイスに関わらず同一の sfx:play を発火する(§1-2: フィードバックの入力経路非依存)。
+    // - セリフ送り(advance) → 'dialogue-next'
+    // - 選択フォーカス移動(focusedChoiceIndex が実際に変化した時のみ) → 'select'
+    // - 選択確定(confirm) → 'confirm'
+    // Esc 打ち切りは仕様表に効果音がないため無音(ui/Dialogue も Esc 音は出さない)。
     if (escPressed) {
       outcome = this.controller.abort()
     } else {
@@ -104,10 +114,23 @@ export class DialogueScene implements Scene {
         // 選択肢表示中: ↑↓ でフォーカス移動、Enter/Space で確定。
         if (upPressed) this.controller.moveFocus(-1)
         if (downPressed) this.controller.moveFocus(1)
-        if (advancePressed) outcome = this.controller.confirm()
+        // フォーカスが実際に動いた時だけ select を鳴らす(ui/Dialogue の「同一indexなら鳴らさない」と一貫)。
+        if (upPressed || downPressed) {
+          const focusAfter = this.controller.view().focusedChoiceIndex
+          if (focusAfter !== viewBefore.focusedChoiceIndex) {
+            this.events?.emit('sfx:play', { name: 'select' })
+          }
+        }
+        if (advancePressed) {
+          outcome = this.controller.confirm()
+          this.events?.emit('sfx:play', { name: 'confirm' })
+        }
       } else {
         // セリフ送り中: Enter/Space/クリックで送り。
-        if (advancePressed || clicked) outcome = this.controller.advance()
+        if (advancePressed || clicked) {
+          outcome = this.controller.advance()
+          this.events?.emit('sfx:play', { name: 'dialogue-next' })
+        }
       }
     }
 
@@ -134,15 +157,9 @@ export class DialogueScene implements Scene {
 
   /**
    * 結末を解釈してシーン遷移を要求する。'continue' は何もしない。
-   * - choice: 'dialogue:choice' を発火し、暫定で approach へ戻す(下記)。
-   * - aborted: approach へ戻る(Esc 打ち切り)。
-   *
-   * 段B(gameplay-engineer)への配線方針(choice 分岐):
-   *   どの choiceId を goldfish へつなぐかは段Bの会話データ(game/dialogue)が定める。配線例:
-   *     if (outcome.choiceId === '<「遊んでいく」のid>') this.requestGoldfish()
-   *     else this.transition('approach')   // 「またあとで」: 締めセリフ表示後に参道へ
-   *   段Aでは契約上のフックのみ用意し、未注入の土台状態では行き止まりを作らないよう
-   *   (INTERACTION_SPEC §1-3)確定後は安全に approach へ戻す。
+   * - choice: 'dialogue:choice' を発火するのみ(遷移は App.routeChoice が単一オーナーとして決める)。
+   *   本シーンは choice では transition しない(REV-T-004-1 Major-2: 二重遷移・例外フロー化の解消)。
+   * - aborted: dialogue→approach の正当な遷移なので本シーンが直接 transition する(Esc 打ち切り)。
    */
   private handleOutcome(outcome: DialogueOutcome): void {
     if (outcome.kind === 'continue') return
@@ -153,24 +170,9 @@ export class DialogueScene implements Scene {
     }
 
     // outcome.kind === 'choice'
+    // 遷移先(goldfish or approach、未登録フォールバック含む)は App.routeChoice が一元決定する。
+    // ここで transition すると二重遷移になるため発火のみに留める(遷移オーナーの単一化)。
     this.events?.emit('dialogue:choice', { choiceId: outcome.choiceId })
-    this.transition('approach')
-  }
-
-  /**
-   * goldfish への遷移要求(AC5 の安全な発火点)。T-005/006 完了まで goldfish シーンは未登録で、
-   * transition('goldfish') は SceneManager が throw する。段Aではコンソール例外を出さず、
-   * ダミー画面も作らず、暫定で approach へ戻す。T-006 で結線時にここを呼ぶように差し替える
-   * (handleOutcome の choice 分岐参照)。
-   */
-  requestGoldfish(): void {
-    // ALLOWED_TRANSITIONS は dialogue→goldfish を許可済み。未登録のみが throw 要因。
-    try {
-      this.transition('goldfish')
-    } catch {
-      // goldfish 未登録(T-005/006 未実装)。安全に参道へ戻す(行き止まりなし)。
-      this.transition('approach')
-    }
   }
 
   /**

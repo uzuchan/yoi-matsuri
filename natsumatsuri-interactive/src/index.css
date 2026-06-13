@@ -34,6 +34,130 @@ body {
   pointer-events: none;
 }
 
+/*
+ * 会話ボックス + 選択肢(src/ui/Dialogue.tsx / T-004 段B)。
+ * ART §2: UIテキスト #f5f0e8 / アクセント #ff9d45 / 背景 #0a0e2e の80%透過パネル。
+ * INTERACTION_SPEC §5: テキスト16px以上・フォーカスリング表示。
+ * .hud-root は pointer-events:none のため、会話要素で pointer-events:auto を有効化する。
+ */
+.dialogue {
+  position: fixed;
+  left: 50%;
+  bottom: 40px;
+  transform: translateX(-50%);
+  width: min(880px, calc(100vw - 48px));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  pointer-events: auto;
+  z-index: 6;
+}
+
+/* セリフパネル(クリックで送り)。button だが見た目はパネル。 */
+.dialogue__panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 20px 24px 16px;
+  border: 1px solid rgba(245, 240, 232, 0.18);
+  border-radius: 10px;
+  background: rgba(10, 14, 46, 0.8); /* #0a0e2e の80%透過パネル(ART §2) */
+  color: #f5f0e8; /* UIテキスト(ART §2) */
+  font-family: system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  cursor: pointer;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+}
+
+.dialogue__speaker {
+  align-self: flex-start;
+  font-size: 16px;
+  font-weight: 700;
+  color: #ff9d45; /* UIアクセント(ART §2): 話者名を強調 */
+  letter-spacing: 0.04em;
+}
+
+.dialogue__text {
+  font-size: 21px;
+  line-height: 1.6;
+  min-height: 1.6em;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* 1文字送り中の点滅キャレット(送り中であることの視覚フィードバック)。 */
+.dialogue__caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1.05em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: #ff9d45;
+  opacity: 0.85;
+  animation: dialogue-caret-blink 0.8s steps(1, end) infinite;
+}
+
+@keyframes dialogue-caret-blink {
+  0%,
+  50% {
+    opacity: 0.85;
+  }
+  50.01%,
+  100% {
+    opacity: 0;
+  }
+}
+
+/* 「クリックで送る」ヒント(全文表示後)。 */
+.dialogue__hint {
+  align-self: flex-end;
+  font-size: 16px;
+  opacity: 0.6;
+}
+
+/* 選択肢パネル。 */
+.dialogue__choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: stretch;
+  width: 100%;
+}
+
+.dialogue__choice {
+  width: 100%;
+  text-align: left;
+  padding: 14px 22px;
+  font-size: 20px;
+  font-family: system-ui, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  color: #f5f0e8; /* UIテキスト(ART §2) */
+  background: rgba(10, 14, 46, 0.8); /* 80%透過パネル(ART §2) */
+  border: 2px solid rgba(245, 240, 232, 0.25);
+  border-radius: 10px;
+  cursor: pointer;
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+/* フォーカス中の選択肢(↑↓ / ホバー)。アクセント #ff9d45(ART §2)。 */
+.dialogue__choice--focused {
+  color: #0a0e2e;
+  background: #ff9d45; /* UIアクセント(ART §2) */
+  border-color: #ff9d45;
+  font-weight: 700;
+}
+
+/* キーボードフォーカスリング(INTERACTION_SPEC §5)。 */
+.dialogue__choice:focus-visible,
+.dialogue__panel:focus-visible {
+  outline: 3px solid #ff9d45;
+  outline-offset: 2px;
+}
+
 /* ?debug=1 のときのみ表示されるデバッグオーバーレイ */
 .debug-overlay {
   position: fixed;

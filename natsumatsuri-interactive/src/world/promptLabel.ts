@@ -35,8 +35,13 @@ const FADE_DURATION = 0.2
 
 /** プロンプトラベル。setVisible で表示/非表示を切替え、update(dt) で 0.2s フェードする。 */
 export interface PromptLabel extends WorldObject {
-  /** 表示(true)/非表示(false)を要求する。実際の opacity 変化は update(dt) が補間する。 */
-  setVisible(visible: boolean): void
+  /**
+   * 表示(true)/非表示(false)を要求する。通常は update(dt) が opacity を 0.2s で補間する。
+   * @param immediate true のとき opacity を即時に目標値へ反映する(update 駆動を待たない)。
+   *   会話遷移時など、本シーンの update が回らない状況でプロンプトを確実に消すために使う
+   *   (INTERACTION_SPEC §3.2: 会話中はプロンプト非表示)。
+   */
+  setVisible(visible: boolean, immediate?: boolean): void
 }
 
 /**
@@ -77,9 +82,14 @@ export function createPromptLabel(position: { x: number; y: number; z: number })
 
   return {
     object: sprite,
-    setVisible(visible: boolean): void {
+    setVisible(visible: boolean, immediate = false): void {
       targetOpacity = visible ? 1 : 0
       if (visible) sprite.visible = true // フェードイン開始時に可視化
+      if (immediate) {
+        // update 駆動を待たず opacity を即時に目標値へ反映する(会話遷移時の確実な非表示)。
+        material.opacity = targetOpacity
+        if (targetOpacity === 0) sprite.visible = false
+      }
     },
     update(dt: number): void {
       const current = material.opacity

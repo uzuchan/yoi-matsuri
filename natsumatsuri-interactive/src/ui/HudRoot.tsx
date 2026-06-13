@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import type { DialogueController, DialogueView, EventBus } from '../core'
+import { Dialogue } from './Dialogue'
 
 /**
  * 段B(gameplay-engineer)が実装する会話ボックスコンポーネントの props 契約。
@@ -52,10 +53,19 @@ export function HudRoot({ events, controller }: HudRootProps) {
 
   useEffect(() => {
     // 単一経路同期(D-008): DialogueScene が発火する表示状態を購読し React state へ橋渡しする。
-    const unsubscribe = events.on('dialogue:view-changed', ({ view: next }) => {
+    const unsubscribeView = events.on('dialogue:view-changed', ({ view: next }) => {
       setView(next)
     })
-    return unsubscribe
+    // dialogue シーンを抜けたら会話オーバーレイを確実に閉じる(マウス確定経路では合成点が
+    // 即座に遷移するため、抜けた後の view-changed(active:false)が届かないことがある)。
+    // HUD は購読のみ(単一経路同期は維持)。to が dialogue 以外なら表示状態をクリアする。
+    const unsubscribeScene = events.on('scene:transition', ({ to }) => {
+      if (to !== 'dialogue') setView(null)
+    })
+    return () => {
+      unsubscribeView()
+      unsubscribeScene()
+    }
   }, [events])
 
   // 会話が active かつ controller(段Bの具象)が注入済みのときだけオーバーレイを描画する。
@@ -65,15 +75,11 @@ export function HudRoot({ events, controller }: HudRootProps) {
   return (
     <div className="hud-root" aria-live="polite">
       {/*
-        会話オーバーレイの描画スロット(段B: ui/Dialogue.tsx)。
-        段A時点ではコンポーネント未実装のため何も描画しない(プレースホルダ無し)。
-        段Bで下の `null` を実コンポーネントへ差し替える:
-
-          {showDialogue && (
-            <Dialogue view={view!} controller={controller!} events={events} />
-          )}
+        会話オーバーレイ(段B: ui/Dialogue.tsx)。
+        showDialogue = controller 注入済み && view.active のときのみ描画する(単一経路同期)。
+        view / controller は showDialogue が true のとき非 null が保証される。
       */}
-      {showDialogue && null}
+      {showDialogue && <Dialogue view={view} controller={controller} events={events} />}
     </div>
   )
 }
