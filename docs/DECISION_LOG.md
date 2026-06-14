@@ -73,3 +73,38 @@
   - 会話のために汎用状態管理(Zustand 等)を導入 → 却下(D-006 継承。EventBus 単一経路で足りる)。
   - Scene に SceneManager を直接渡す(SceneContext 拡張) → 却下。全シーンが遷移表を直接叩けると不正遷移の温床。遷移ハンドラ注入で必要なシーンにだけ許可する。
 - **影響**: core に `Dialogue.ts`(契約)を追加、GameEvents に `dialogue:view-changed` を追加、InputManager の追跡キーに `Enter`(セリフ送り/選択確定 INTERACTION_SPEC §3.2)を追加。新規依存はなし(three/React のみ)。段Bは game/dialogue(具象 controller・会話データ)と ui/Dialogue(表示)を実装し、App.tsx の合成点で注入、ApproachScene に E/クリック→`transition('dialogue')` を足す。goldfish 遷移は T-005/006 まで未登録のため安全に approach へフォールバックする(AC5)。
+
+## D-010 (2026-06-14) StallFramework — 多屋台共通基盤(SceneId 集約 + StallRegistry)【案・未実装】
+
+設計書: `reports/design/STALL_FRAMEWORK.md`(本エントリは要旨。実装着手は別タスク・別承認)
+
+- **決定(案)**: 参道の全屋台(金魚すくい + 残り19屋台)を遊べるようにする共通基盤を、金魚すくいで実証済みの3層パターン(純TS Session / three Scene / React HUD)を一般化して用意する。核となる構造:
+  1. **SceneId を屋台ごとに増やさない**。`SceneId` を **`'approach' | 'dialogue' | 'minigame' | 'result'` の固定4種**にし、現 `'goldfish'` を汎用 **`'minigame'`** へ集約する。「どの屋台か」は **シーン遷移 payload の `stallId`** で運ぶ(approach→dialogue→minigame→result→approach の各遷移で引き継ぐ)。これにより `ALLOWED_TRANSITIONS` の網羅チェック(不正遷移 throw = D-006 の価値)を保ったまま屋台を無限に追加できる。
+  2. **`MinigameScene`(汎用)**が enter payload の `stallId` で該当屋台 Scene を Registry から引き、enter/update/render/exit を委譲する薄いディスパッチャになる。同時にアクティブ描画する屋台は常に1つ(性能予算 §4 を屋台数に依らず守る)。
+  3. **屋台は `StallDefinition` + `StallRegistry` で「定義+登録」**する。合成点(App.tsx)が Registry を回して MinigameScene/Dialogue/Result/近接を自動配線する。新屋台は「Session + Scene +(任意 HUD)+ Definition 登録」で増える(open/closed)。
+  4. **層の配置**: 純TSの遊び契約 **`StallSession`/`StallStatus`/`StallResult` は `src/game/stall/`**(three/react 非依存 = D-003)。配線契約 **`StallDefinition`/`StallRegistry` は `src/scenes/stall/`**(Scene=three・HUD=react を含むため **core には置かない** = core の three/react 非依存・最小性を維持)。`reward.ts` を一般化した **`StallResultRules`/`resolveStallResult` は `src/game/result/`**(score→tier→{見出し/店主セリフ/報酬}を屋台が供給)。
+  5. **GameEvents の整理**: `goldfish:caught/poi-torn/finished` を **`stall:finished{ stallId, result }`** と既存 `sfx:play` に集約し、屋台固有イベントで型マップを膨らませない(野放し禁止 D-006 を守りつつ屋台無限対応)。
+  6. **近接の多屋台化**: ApproachScene が全屋台 placement に対し `ProximityTracker` を1個ずつ持ち `stall:approach{stallId}`/`stall:leave{stallId}` を発火、プロンプトを当該屋台名で出す(同時1軒近接前提、複数時は最近傍タイブレーク)。配置は festivalStalls と統合した `StallPlacement`(位置/向き/interactRadius)を単一の真実にする。
+  7. **金魚を最初の利用者にして実証**。GoldfishScene/reward/会話を Definition 1件へ段階移行し、回帰0(4ゲート+e2e 緑)を各フェーズの不変条件にする。
+- **理由**: 固定4状態 + payload パラメータ化なら不正遷移検出を保ったまま屋台を量産できる。core を最小に保ち、屋台の差し込みを実現する。会議(MEETING_MINUTES T2)で「屋台を増やすなら先に StallFramework」が合意済み。金魚を後付け移植することで設計を実証する(gameplay-engineer 1-F)。
+- **代替案と却下理由**:
+  - `SceneId` union を屋台ごと拡張(`|'shooting'|'takoyaki'|…`) → 却下。遷移表・`Scene.id`・eventMap・全 switch が線形膨張し20軒で破綻。
+  - `type SceneId = BuiltinSceneId | (string & {})`(string 拡張) → 却下。`Record<SceneId,...>` の網羅チェックが効かず不正遷移検出(SceneManager の価値)が落ちる。
+  - `StallDefinition`/`StallRegistry` を `src/core/` に置く(gameplay-engineer 当初案) → 却下。Definition は `Scene`(three)・HUD(react)を含み、core の three/react 非依存(§2)に反する。core は SceneId 変更のみに留める。
+  - 屋台固有イベントを GameEvents へ追加 → 却下。型マップが屋台数に比例して膨張し野放し化(D-006 違反)。固有演出は Scene 内 listener / sfx:play で処理する。
+  - 汎用状態管理(Zustand 等)導入 → 却下(D-006 継承。SceneManager + EventBus + listener 橋渡しで足りる)。
+- **影響**: **core の変更は SceneId(`goldfish`→`minigame`)と ALLOWED_TRANSITIONS の改定、EventBus の `goldfish:*` 3種→`stall:finished` 置換のみ**(段階移行で並走可)。`src/game/stall`・`src/scenes/stall`・`src/ui/StallHud.tsx`・`game/result/stallResult.ts` を新設。`scenes/goldfish`・`scenes/approach`・`world/promptLabel`・`ui` の改修は各所有エージェントへ実装フェーズで依頼。新規依存なし(D-002/D-003/D-006/D-008 と整合)。最小スライス = 基盤 + 金魚移行 + 原型1屋台(お面屋推奨)。
+
+### D-010 確定(2026-06-14)— フェーズ0+1 実装完了(基盤 + 金魚移行)
+
+上記【案】を **実装して確定** した(P0 基盤 + P1 金魚移行。新屋台 P2 以降は別タスク)。確定内容:
+
+- **SceneId 固定4種を実装**: `core/SceneManager.ts` の `SceneId = 'approach' | 'dialogue' | 'minigame' | 'result'`。`ALLOWED_TRANSITIONS = { approach:['dialogue'], dialogue:['approach','minigame'], minigame:['result'], result:['approach'] }`。屋台は遷移 payload の `stallId` で識別。
+- **EventBus 集約を実装**: `goldfish:caught` / `goldfish:poi-torn` / `goldfish:finished` を **削除**し、`'stall:finished': { stallId: string; result: StallFinishedResult }` に集約。`StallFinishedResult`(score/reason/metrics)を core に定義(`game/stall` の `StallResult` と構造的に一致。core は game に依存しない)。屋台固有の演出(捕獲カウンタ・破損音)は Scene 内 listener / `sfx:play` で処理し、GameEvents 型を屋台数で膨らませない。
+- **層の配置を実装**: 純TS契約 `StallSession`/`StallStatus`/`StallEndReason`/`StallResult`/`StallSnapshot`/`StallCommonEvent` = `src/game/stall/`。配線契約 `StallDefinition`/`StallRegistry`/`MinigameScene`/`StallScene`/`StallHudState`/`StallPlacement`/`computeResultCamera` = `src/scenes/stall/`(three/react を含むため core 外)。結果規則 `StallResultRules`/`resolveStallResult` = `src/game/result/stallResult.ts`。汎用 HUD = `src/ui/StallHud.tsx`。汎用会話フォールバック = `src/game/dialogue/genericStall.ts`。
+- **MinigameScene ディスパッチャ**: SceneManager に `'minigame'` 1つだけ登録。enter payload の `stallId` で Registry から StallScene を**遅延生成**して enter/update/render/exit/resize を委譲、exit で `dispose`(歩行中は屋台中身を持たない=常駐コスト最小・dispose 漏れ防止)。同時にアクティブ描画する屋台は常に1つ(性能予算を屋台数に依らず維持。実GPU実測: 金魚 minigame 120FPS / draw call 27)。
+- **多屋台パラメータ化**: dialogue は `setControllerResolver(stallId→DialogueController)` で会話を解決(`createDialogue` ?? `createGenericStallDialogue(displayName)`)。result は `registry.get(stallId).resultRules`/`placement` で結果・カメラを解決。approach は全屋台 placement に `ProximityTracker` を1個ずつ持ち、`stall:approach{stallId}`/`stall:leave{stallId}` を発火、最近傍タイブレークでプロンプト/遷移対象を一意化、`transition('dialogue', { stallId })` で stallId を引き回す(approach→dialogue→minigame→result→approach の全遷移で引き継ぐ)。
+- **金魚移行(回帰0)**: 金魚すくいを `StallDefinition`(id=`'goldfish-stall'`)1件として基盤に載せ替え。`GoldfishScene` は `StallScene`(id=`'minigame'`)化(物理・描画は無改修)、HUD は汎用 `StallHudState`(gauge=ポイ耐久 / score=確保数)で表現、終了は `stall:finished` へ集約。`reward.ts` は現行 API(`resolveResult`/`tierForCaught`/`REWARDS`)を維持しつつ実体を `resolveStallResult` + `GOLDFISH_RESULT_RULES` へ委譲(段境界・文言・報酬は GDD §3.2 のまま転記=出力完全同一)。結果カメラは `computeResultCamera(placement)` が金魚 placement で現行 T-009 構図の固定数値を完全再現(回帰テストで固定)。
+- **付随変更(リネーム追従。挙動不変)**: `audio/AudioEngine.ts` のダッキング判定 `to === 'goldfish'` → `to === 'minigame'`(金魚すくい中のみ環境音 -6dB は不変)。`world/promptLabel.ts` に `setPosition` 追加(近接中の屋台へラベルを張り替える=§4.2 案a。同時1軒前提で draw call を増やさない)。
+- **全ゲート緑**: typecheck / lint / test(300 passed, 18 skipped)/ build / e2e(11 passed)。金魚すくいの遊び・難度・見た目・会話・結果・報酬はプレイヤー視点で完全に同一(既存 e2e 動線=近接→会話→遊技→結果→復帰 が無改修の検証内容で緑)。GDD §4.3 難度パラメータ不変。
+- **新規依存ゼロ**(three / React のみ。D-002/D-003/D-006/D-008 と整合)。

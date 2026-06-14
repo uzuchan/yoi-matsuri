@@ -3,7 +3,12 @@
  * 他モジュール(scenes/world/ui/audio/game)はこのバレル経由でcoreへアクセスする。
  */
 export { EventBus } from './EventBus'
-export type { GameEvents, GameEventName, EventHandler } from './EventBus'
+export type {
+  GameEvents,
+  GameEventName,
+  EventHandler,
+  StallFinishedResult,
+} from './EventBus'
 export { GameLoop } from './GameLoop'
 export type { GameLoopOptions } from './GameLoop'
 export { InputManager, GAME_KEYS } from './InputManager'

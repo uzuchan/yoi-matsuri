@@ -22,16 +22,22 @@
 yoi-matsuri/src/
 ├── core/     # GameLoop, SceneManager, InputManager, EventBus, Dialogue(契約), rng
 ├── game/     # 純TSドメインロジック。three/react/DOMをimport禁止
+│   ├── stall/     # 屋台横断の遊び契約(StallSession/StallStatus/StallEndReason/StallResult/StallSnapshot)= D-010
 │   ├── goldfish/  # params.ts(全パラメータ), poi.ts, fish.ts, session.ts
-│   └── dialogue/  # DialogueController実装・会話データ・状態遷移(段B/T-004。純TS)
+│   ├── result/    # 結果解決(stallResult.ts=汎用 resolveStallResult/StallResultRules / reward.ts=金魚固有・委譲)
+│   └── dialogue/  # DialogueController実装・会話データ・状態遷移(純TS)+ genericStall(汎用フォールバック会話)
 ├── scenes/   # SceneインターフェースのThree.js実装
-│   ├── approach/  # 参道シーン
-│   ├── dialogue/  # 会話シーン(背景はApproachScene参照を描画。DialogueController駆動・HUDへ表示イベント発火)
-│   └── goldfish/  # 金魚すくいシーン
+│   ├── approach/  # 参道シーン(全屋台 placement への近接判定。stall:approach{stallId}/leave{stallId})
+│   ├── dialogue/  # 会話シーン(背景はApproachScene参照を描画。stallId→controller を解決して駆動)
+│   ├── stall/     # 屋台FW配線(StallDefinition/StallRegistry/MinigameScene/StallScene/computeResultCamera/definitions/)= D-010
+│   ├── goldfish/  # 金魚すくいシーン(StallScene 実装。MinigameScene が stallId で委譲)
+│   └── result/    # 結果シーン(registry の resultRules/placement で結果・カメラを解決)
 ├── world/    # 環境オブジェクト構築(提灯、鳥居、屋台、花火、群衆)
 ├── audio/    # AudioEngine + プロシージャル音源
-└── ui/       # Reactコンポーネント(HudRoot=EventBus→React橋渡し+オーバーレイ枠, Dialogue, Result)
+└── ui/       # Reactコンポーネント(HudRoot=EventBus→React橋渡し+枠, Dialogue, StallHud=汎用屋台HUD, Result)
 ```
+
+屋台フレームワーク(D-010): 参道の屋台は **StallDefinition(scenes/stall)+ StallRegistry** で「定義+登録」する。SceneId は屋台数に依存しない固定4種(approach/dialogue/minigame/result)で、`minigame` シーン(MinigameScene)が enter payload の `stallId` で該当 StallScene へ委譲する。合成点(App.tsx)が Registry を回して SceneManager 登録・近接・会話・結果を自動配線する。**新屋台は `scenes/stall/definitions/<id>.ts` に StallDefinition を1件書き、`definitions/index.ts` の `createStallRegistry()` に register を1行足すだけで遊べる**(純TS Session が `game/stall` の StallSession 契約を実装し、Scene が StallScene を実装する)。
 
 合成点 App.tsx(D-008): `src/App.tsx` はゲームシェル兼「合成点」。全画面canvasにWebGLRendererをマウントし、GameLoop + SceneManager を起動し、その上に React HUD(`ui/HudRoot`)を重ねる。シーンの生成・登録と依存注入(DialogueScene への ApproachScene 参照・具象 DialogueController・遷移ハンドラの束縛、HudRoot への controller 引き渡し)を行う。**合成点は機能オーナー(各機能の実装エージェント)が具象注入のため最小編集してよい**(モジュール境界の例外。配線のみ)。
 
@@ -59,8 +65,8 @@ interface GameLoop {
   readonly fps: number;                        // 直近1秒の実測FPS
 }
 
-// SceneManager: シーン状態機械
-type SceneId = 'approach' | 'dialogue' | 'goldfish' | 'result';
+// SceneManager: シーン状態機械(D-010: SceneId は屋台数に依存しない固定4種)
+type SceneId = 'approach' | 'dialogue' | 'minigame' | 'result';  // 旧 'goldfish' → 'minigame' へ集約
 interface Scene {
   readonly id: SceneId;
   enter(ctx: SceneContext): void; exit(): void;
@@ -68,21 +74,26 @@ interface Scene {
 }
 interface SceneManager {
   register(scene: Scene): void;
-  transition(to: SceneId, payload?: unknown): void;  // 不正遷移はthrow
+  transition(to: SceneId, payload?: unknown): void;  // 不正遷移はthrow。屋台は payload の stallId で識別
   readonly current: SceneId;
 }
+// ALLOWED_TRANSITIONS: approach→dialogue / dialogue→{approach,minigame} / minigame→result / result→approach
 
 // EventBus: 型付きpub/sub
+interface StallFinishedResult {                // 屋台プレイの最終成果(game/stall の StallResult と構造一致)
+  readonly score: number;
+  readonly reason: 'success' | 'timeout' | 'broke' | 'quit';
+  readonly metrics?: Readonly<Record<string, number>>;
+}
 interface GameEvents {
   'scene:transition': { from: SceneId; to: SceneId };
   'stall:approach': { stallId: string };      // 近接圏に入った
   'stall:leave': { stallId: string };
   'dialogue:choice': { choiceId: string };
   'dialogue:view-changed': { view: DialogueView };  // 会話表示状態の更新(D-008)。DialogueScene→HudRoot
-  'goldfish:caught': { total: number };
-  'goldfish:poi-torn': Record<string, never>;
-  'goldfish:finished': { caught: number; reason: 'torn' | 'timeout' | 'quit' };
+  'stall:finished': { stallId: string; result: StallFinishedResult };  // D-010: goldfish:* 3種を集約
   'sfx:play': { name: string };               // AUDIO_SPECのイベント表参照
+  // 屋台固有の演出(捕獲カウンタ・破損音)は Scene 内 listener / sfx:play で処理し、型マップを膨らませない
   // 追加はこの型マップに追記(stringイベントの野放し禁止)
 }
 
@@ -119,9 +130,16 @@ interface DialogueController {                  // 入力2経路(キーボード
 ### モジュールAPI: 会話システム(D-008 / T-004 段A)
 
 - **`src/core/Dialogue.ts`**: 上記 `DialogueController` / `DialogueView` / `DialogueChoice` / `DialogueOutcome` を定義し core バレル(`src/core/index.ts`)から再エクスポート。段A(基盤)で確定。段Bは契約に従う(変更要は technical-architect へ依頼)。
-- **`src/scenes/dialogue/DialogueScene.ts`**(Scene 実装): コンストラクタで ApproachScene 参照と DialogueController を DI で受ける。`render(alpha)` は背景に ApproachScene.render を呼ぶ(プレイヤー非移動)。`update(dt)` は controller.tick とキーボード入力(立ち上がりエッジ)を controller へ渡し、表示状態変化を `dialogue:view-changed` で発火、結末で遷移する。遷移は `setTransitionHandler(handler)` で合成点から注入されたハンドラ経由(Scene は SceneManager を直接参照しない core 設計)。`requestGoldfish()` は goldfish 未登録時に approach へ安全フォールバック(AC5)。
-- **`src/ui/HudRoot.tsx`**: `{ events: EventBus; controller: DialogueController | null }` を受け、`dialogue:view-changed` を購読して React state へ橋渡しし、会話オーバーレイ(段B `ui/Dialogue.tsx`)をマウントする枠。controller 未注入時は何も描画しない。`DialogueProps`(段Bの Dialogue が受ける props 契約: `{ view; controller; events }`)も同ファイルで定義。
-- **`src/App.tsx`**(合成点): `{ controller?: DialogueController | null }` を prop で受ける。controller 注入時のみ DialogueScene を生成・登録・配線する。
+- **`src/scenes/dialogue/DialogueScene.ts`**(Scene 実装): コンストラクタで ApproachScene 参照と既定 DialogueController を DI で受ける。`setControllerResolver(stallId→DialogueController)` を注入されると enter の payload `stallId` で会話を解決する(多屋台 / D-010)。`render(alpha)` は背景に ApproachScene.render を呼ぶ(プレイヤー非移動)。`update(dt)` は controller.tick とキーボード入力(立ち上がりエッジ)を controller へ渡し、表示状態変化を `dialogue:view-changed` で発火、結末で遷移する。choice の遷移先(minigame/approach)は合成点 App.routeChoice が単一オーナーで決め、`currentStallId` を読んで minigame へ stallId を引き継ぐ。遷移は `setTransitionHandler` 注入のハンドラ経由(Scene は SceneManager を直接参照しない)。アクティブ controller は `setActiveControllerListener` で合成点→HudRoot へ橋渡し(クリック経路の集約先)。
+- **`src/ui/HudRoot.tsx`**: `{ events; controller; stallHud; resultHud; onResultReturn; inventory; inventoryFlyToken }` を受け、`dialogue:view-changed` を購読して会話オーバーレイ(`ui/Dialogue.tsx`)を、`stallHud`/`resultHud` で `ui/StallHud`(汎用屋台 HUD)/`ui/Result` をマウントする枠(3種は排他)。`DialogueProps`(`{ view; controller; events }`)も同ファイルで定義。
+- **`src/App.tsx`**(合成点): StallRegistry を回して固定4シーン(approach/dialogue/minigame/result)を1つずつ登録し、近接・会話・結果・報酬を自動配線する(D-010)。`stall:finished` を購読して result へ遷移、result→approach で resultRules から報酬を所持品へ付与。
+
+### モジュールAPI: 屋台フレームワーク(D-010 / StallFramework P0+P1)
+
+- **`src/game/stall/`**(純TS契約): `StallSession<TInput,TState,TEvent>`(`update(dt,input)→TEvent[]` / `snapshot()→TState` / `status` / `result()→StallResult|null`)、`StallStatus`('playing'|'cleared'|'failed'|'timeout'|'quit')、`StallEndReason`('success'|'timeout'|'broke'|'quit')、`StallResult`(`{ score; reason; metrics? }`)、`StallSnapshot`(`{ status; timeRemaining; danger; score }` = 汎用 HUD の最小契約)、`StallCommonEvent`(`{ type:'stall-finished'; result }`)。
+- **`src/game/result/stallResult.ts`**(純TS): `StallResultRules`(`thresholds`/`headings`/`shopkeeperLines`/`failByReason`/`rewardByTier`)、`resolveStallResult(result, rules)→StallOutcome`、`tierForScore`、`RewardInfo`。`reward.ts` は金魚固有 API を維持しつつ実体を委譲(`GOLDFISH_RESULT_RULES`)。
+- **`src/scenes/stall/`**(配線・three/react を含むため core 外): `StallDefinition`(`{ id; displayName; placement; createScene(renderer)→StallScene; createDialogue?; resultRules }`)、`StallRegistry`(register/get/has/getAll。重複・未登録 throw)、`MinigameScene`(stallId で StallScene を遅延生成・委譲・exit で dispose)、`StallScene`(id='minigame' + setHudListener + dispose)、`StallHudState`/`StallPlacement`、`computeResultCamera(placement)`。屋台定義は `definitions/<id>.ts`、`definitions/index.ts` の `createStallRegistry()` で登録。
+- **`src/ui/StallHud.tsx`**: 汎用屋台 HUD(残時間 + 0..1 ゲージ + スコア + 開始ヒント)。`StallHudState` を受ける。金魚の見た目・CSS クラス(.goldfish-hud*)を回帰0で共有。
 
 ## 4. 性能予算
 

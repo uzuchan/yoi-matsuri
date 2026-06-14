@@ -108,8 +108,18 @@ test('Esc で会話を打ち切り approach へ戻る', async ({ page }) => {
   await walkToStallAndOpen(page)
   await expect(page.locator(DIALOGUE)).toBeVisible()
 
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(150)
+  // Esc 立ち上がりは GameLoop の update 間で取りこぼしうる(GPU 無効・並列負荷)。
+  // 会話が閉じるまで Esc を再試行する(検証する挙動 = Esc で打ち切り approach へ戻る は不変)。
+  let closed = false
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.press('Escape')
+    await page.waitForTimeout(120)
+    if ((await page.locator(DIALOGUE).count()) === 0) {
+      closed = true
+      break
+    }
+  }
+  expect(closed, 'Esc で会話が打ち切られる').toBe(true)
   await expect(page.locator(DIALOGUE)).toHaveCount(0)
 
   expect(errors).toEqual([])

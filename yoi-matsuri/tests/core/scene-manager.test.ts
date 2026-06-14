@@ -99,15 +99,16 @@ describe('SceneManager', () => {
     expect(handler).toHaveBeenCalledWith({ from: 'approach', to: 'dialogue' })
   })
 
-  it('ゲーム一周(approach→dialogue→goldfish→result→approach)が遷移表で許可されている', () => {
+  it('ゲーム一周(approach→dialogue→minigame→result→approach)が遷移表で許可されている', () => {
+    // D-010: 旧 'goldfish' シーンは固定4種の 'minigame' へ集約(屋台は payload の stallId で識別)。
     const { manager } = createManager()
-    const ids: SceneId[] = ['approach', 'dialogue', 'goldfish', 'result']
+    const ids: SceneId[] = ['approach', 'dialogue', 'minigame', 'result']
     const scenes = ids.map((id) => createTestScene(id))
     for (const testScene of scenes) manager.register(testScene.scene)
     manager.start('approach')
 
     manager.transition('dialogue')
-    manager.transition('goldfish')
+    manager.transition('minigame')
     manager.transition('result')
     manager.transition('approach')
 

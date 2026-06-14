@@ -8,6 +8,7 @@ import type {
   SceneContext,
 } from '../../core'
 import type { ApproachScene } from '../approach/ApproachScene'
+import { readStallId } from '../stall'
 
 /**
  * 会話シーン(T-004 段A / D-008)。
@@ -37,7 +38,17 @@ export class DialogueScene implements Scene {
   readonly id = 'dialogue' as const
 
   private readonly background: ApproachScene
+  /**
+   * 既定の会話 controller(後方互換 / 単一屋台時の DI)。多屋台では enter の payload stallId から
+   * controllerResolver で解決した controller を優先する(StallFramework §3.3)。
+   */
   private readonly controller: DialogueController
+  /** enter の stallId → controller を解決する(合成点が注入。多屋台パラメータ化 / §3.3)。 */
+  private controllerResolver: ((stallId: string) => DialogueController) | null = null
+  /** 現在アクティブな会話 controller(enter で確定)。 */
+  private activeController: DialogueController
+  /** 現在の屋台 id(enter の payload。choice→minigame へ引き継ぐ)。 */
+  private activeStallId: string | null = null
 
   private events: EventBus | null = null
   private input: InputManager | null = null
@@ -57,21 +68,52 @@ export class DialogueScene implements Scene {
   constructor(background: ApproachScene, controller: DialogueController) {
     this.background = background
     this.controller = controller
+    this.activeController = controller
+  }
+
+  /** 合成点(App.tsx)から stallId→controller 解決関数を注入する(多屋台 / §3.3)。 */
+  setControllerResolver(resolver: (stallId: string) => DialogueController): void {
+    this.controllerResolver = resolver
+  }
+
+  /**
+   * アクティブ controller の購読者(合成点が React 橋渡し)。enter で解決した controller を、
+   * クリック入力(ui/Dialogue)が同じ controller を叩けるよう HudRoot へ渡すために通知する。
+   * exit では null を流す(D-008: クリック経路とキーボード経路を同一 controller に集約)。
+   */
+  private activeControllerListener: ((controller: DialogueController | null) => void) | null = null
+
+  /** 合成点(App.tsx)からアクティブ controller 購読者を注入する。 */
+  setActiveControllerListener(listener: (controller: DialogueController | null) => void): void {
+    this.activeControllerListener = listener
   }
 
   enter(ctx: SceneContext): void {
     this.events = ctx.events
     this.input = ctx.input
 
+    // どの屋台の会話かを payload の stallId で確定し、controller を解決する(多屋台 / §3.3)。
+    // resolver 未注入(単一屋台後方互換)や stallId なしのときは既定 controller を使う。
+    this.activeStallId = readStallId(ctx.payload)
+    this.activeController =
+      this.activeStallId !== null && this.controllerResolver !== null
+        ? this.controllerResolver(this.activeStallId)
+        : this.controller
+
     // エッジ検出の基準をリセット(approach から入った瞬間の E/クリックを送りに誤検出しない)。
     resetKeyState(this.prevDown)
     this.prevMousePressed = this.input.mouse.pressed
 
-    this.controller.start()
+    // クリック経路(ui/Dialogue)へアクティブ controller を渡す(キーボードと同一集約先 / D-008)。
+    this.activeControllerListener?.(this.activeController)
+
+    this.activeController.start()
     this.emitView()
   }
 
   exit(): void {
+    // クリック経路の controller を切り離す(会話を抜けたら HudRoot 側でも参照しない)。
+    this.activeControllerListener?.(null)
     this.events = null
     this.input = null
   }
@@ -81,7 +123,7 @@ export class DialogueScene implements Scene {
     if (!input) return
 
     // 1文字送り(約30字/s)のタイピングを進める。
-    this.controller.tick(_dt)
+    this.activeController.tick(_dt)
 
     // --- キーボードのエッジを集約(D-008: キーボード経路) ---
     // 全キーのエッジを毎フレーム無条件に評価する(justPressed は prevDown を更新する副作用を持つため、
@@ -107,28 +149,28 @@ export class DialogueScene implements Scene {
     // - 選択確定(confirm) → 'confirm'
     // Esc 打ち切りは仕様表に効果音がないため無音(ui/Dialogue も Esc 音は出さない)。
     if (escPressed) {
-      outcome = this.controller.abort()
+      outcome = this.activeController.abort()
     } else {
-      const viewBefore = this.controller.view()
+      const viewBefore = this.activeController.view()
       if (viewBefore.choices.length > 0) {
         // 選択肢表示中: ↑↓ でフォーカス移動、Enter/Space で確定。
-        if (upPressed) this.controller.moveFocus(-1)
-        if (downPressed) this.controller.moveFocus(1)
+        if (upPressed) this.activeController.moveFocus(-1)
+        if (downPressed) this.activeController.moveFocus(1)
         // フォーカスが実際に動いた時だけ select を鳴らす(ui/Dialogue の「同一indexなら鳴らさない」と一貫)。
         if (upPressed || downPressed) {
-          const focusAfter = this.controller.view().focusedChoiceIndex
+          const focusAfter = this.activeController.view().focusedChoiceIndex
           if (focusAfter !== viewBefore.focusedChoiceIndex) {
             this.events?.emit('sfx:play', { name: 'select' })
           }
         }
         if (advancePressed) {
-          outcome = this.controller.confirm()
+          outcome = this.activeController.confirm()
           this.events?.emit('sfx:play', { name: 'confirm' })
         }
       } else {
         // セリフ送り中: Enter/Space/クリックで送り。
         if (advancePressed || clicked) {
-          outcome = this.controller.advance()
+          outcome = this.activeController.advance()
           this.events?.emit('sfx:play', { name: 'dialogue-next' })
         }
       }
@@ -179,18 +221,26 @@ export class DialogueScene implements Scene {
    * SceneManager への遷移を要求する。Scene は SceneManager を直接参照しない core 設計のため
    * (SceneContext は SceneManager を公開しない)、App.tsx の合成点で束縛された遷移ハンドラ経由で行う。
    */
-  private transition(to: 'approach' | 'goldfish'): void {
+  private transition(to: 'approach' | 'minigame'): void {
     this.transitionHandler?.(to)
   }
 
   /**
    * シーン遷移ハンドラ。App.tsx(合成点)が SceneManager.transition を束縛して注入する。
    */
-  private transitionHandler: ((to: 'approach' | 'goldfish') => void) | null = null
+  private transitionHandler: ((to: 'approach' | 'minigame') => void) | null = null
 
   /** App.tsx(合成点)から遷移ハンドラを注入する。 */
-  setTransitionHandler(handler: (to: 'approach' | 'goldfish') => void): void {
+  setTransitionHandler(handler: (to: 'approach' | 'minigame') => void): void {
     this.transitionHandler = handler
+  }
+
+  /**
+   * 現在の屋台 id(enter の payload。choice→minigame 遷移で stallId を引き継ぐため
+   * 合成点 App.routeChoice が参照する / §3.3・§4.4)。
+   */
+  get currentStallId(): string | null {
+    return this.activeStallId
   }
 
   /** キーの立ち上がり(前フレーム未押下→今フレーム押下)を検出する。 */
@@ -205,13 +255,13 @@ export class DialogueScene implements Scene {
 
   /** 現在の表示状態を HUD へ無条件で発火する。 */
   private emitView(): void {
-    this.events?.emit('dialogue:view-changed', { view: this.controller.view() })
-    this.lastViewSignature = signature(this.controller.view())
+    this.events?.emit('dialogue:view-changed', { view: this.activeController.view() })
+    this.lastViewSignature = signature(this.activeController.view())
   }
 
   /** 表示状態が前回発火時から変化していれば HUD へ発火する(無駄な再描画を抑える)。 */
   private emitViewIfChanged(): void {
-    const view = this.controller.view()
+    const view = this.activeController.view()
     const sig = signature(view)
     if (sig !== this.lastViewSignature) {
       this.lastViewSignature = sig

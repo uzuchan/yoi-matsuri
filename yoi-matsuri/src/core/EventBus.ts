@@ -2,7 +2,21 @@ import type { SceneId } from './SceneManager'
 import type { DialogueView } from './Dialogue'
 
 /**
- * ゲーム全体の型付きイベントマップ(TECHNICAL_ARCHITECTURE §3)。
+ * 屋台プレイの最終成果(EventBus に載せる純データ / D-010)。
+ *
+ * 純TS の遊び契約 game/stall の StallResult と **構造的に一致**させる(core は game に依存できないため
+ * core 側で同形を定義する。game の StallResult は本型へ構造的に代入可能)。屋台横断の終了理由・スコアを
+ * 運ぶ。屋台固有の演出イベント(caught/torn 等)は EventBus に載せず Scene 内 listener / sfx:play で
+ * 処理する(GameEvents 型を屋台ごとに膨らませない / D-006)。
+ */
+export interface StallFinishedResult {
+  readonly score: number
+  readonly reason: 'success' | 'timeout' | 'broke' | 'quit'
+  readonly metrics?: Readonly<Record<string, number>>
+}
+
+/**
+ * ゲーム全体の型付きイベントマップ(TECHNICAL_ARCHITECTURE §3 / D-010)。
  * イベントを増やす場合は必ずこのマップに追記する(stringイベントの野放し禁止)。
  */
 export interface GameEvents {
@@ -16,9 +30,12 @@ export interface GameEvents {
    * payload はプレーンな表示状態スナップショット(three/react 非依存)。
    */
   'dialogue:view-changed': { view: DialogueView }
-  'goldfish:caught': { total: number }
-  'goldfish:poi-torn': Record<string, never>
-  'goldfish:finished': { caught: number; reason: 'torn' | 'timeout' | 'quit' }
+  /**
+   * 屋台ミニゲームが終了した(D-010。goldfish:caught/poi-torn/finished の集約後継)。
+   * 合成点が購読して result へ遷移し、result.resultRules で score→{tier/見出し/セリフ/報酬} を解決する。
+   * 屋台固有の演出(捕獲数 HUD・破損音)は Scene 内 listener / sfx:play で処理し、本イベントには載せない。
+   */
+  'stall:finished': { stallId: string; result: StallFinishedResult }
   'sfx:play': { name: string }
   /**
    * 花火の打ち上げ(T-009)。発火責任は scenes/approach(視覚 = world/fireworks)、購読は audio。

@@ -14,16 +14,18 @@ describe('EventBus', () => {
   })
 
   it('同一イベントの複数ハンドラがすべて呼ばれる', () => {
+    // D-010: 屋台固有イベント(goldfish:caught/poi-torn)は stall:finished へ集約。
     const bus = new EventBus()
     const first = vi.fn()
     const second = vi.fn()
-    bus.on('goldfish:caught', first)
-    bus.on('goldfish:caught', second)
+    const payload = { stallId: 'goldfish-stall', result: { score: 3, reason: 'broke' as const } }
+    bus.on('stall:finished', first)
+    bus.on('stall:finished', second)
 
-    bus.emit('goldfish:caught', { total: 3 })
+    bus.emit('stall:finished', payload)
 
-    expect(first).toHaveBeenCalledWith({ total: 3 })
-    expect(second).toHaveBeenCalledWith({ total: 3 })
+    expect(first).toHaveBeenCalledWith(payload)
+    expect(second).toHaveBeenCalledWith(payload)
   })
 
   it('offで購読解除した後はハンドラが呼ばれない', () => {
@@ -41,10 +43,10 @@ describe('EventBus', () => {
   it('onが返す購読解除関数でも解除できる', () => {
     const bus = new EventBus()
     const handler = vi.fn()
-    const unsubscribe = bus.on('goldfish:poi-torn', handler)
+    const unsubscribe = bus.on('stall:approach', handler)
 
     unsubscribe()
-    bus.emit('goldfish:poi-torn', {})
+    bus.emit('stall:approach', { stallId: 'goldfish-stall' })
 
     expect(handler).not.toHaveBeenCalled()
   })

@@ -42,6 +42,11 @@ export interface PromptLabel extends WorldObject {
    *   (INTERACTION_SPEC §3.2: 会話中はプロンプト非表示)。
    */
   setVisible(visible: boolean, immediate?: boolean): void
+  /**
+   * ラベルのワールド座標を張り替える(StallFramework §4.2 案a: 近接中の屋台が変わるたびに位置を移す)。
+   * 同時に1軒しか近接しない前提のもと、1枚のラベルを使い回して draw call を増やさない。
+   */
+  setPosition(x: number, y: number, z: number): void
 }
 
 /**
@@ -82,6 +87,9 @@ export function createPromptLabel(position: { x: number; y: number; z: number })
 
   return {
     object: sprite,
+    setPosition(x: number, y: number, z: number): void {
+      sprite.position.set(x, y, z)
+    },
     setVisible(visible: boolean, immediate = false): void {
       targetOpacity = visible ? 1 : 0
       if (visible) sprite.visible = true // フェードイン開始時に可視化
