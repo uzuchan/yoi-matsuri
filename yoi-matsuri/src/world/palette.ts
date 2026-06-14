@@ -35,6 +35,33 @@ export const PALETTE = {
 export const BULB_COLOR = '#ffd166'
 
 /**
+ * 縁日屋台の差し色(T-012)。**新色は一切追加しない** — すべて ART §2 の既存パレット内から、
+ * 屋台ごとの陳列品・暖簾(背板)の色相に流用するための再エクスポートにすぎない。
+ * 屋根は #c0392b 系・幕は #c0392b/#f5f0e8・電球は #ffd166・木部は土色派生で固定し(§2/§3)、
+ * 種類ごとの「多彩さ」はこの範囲の差し色で出す(ART §2「パレット外の色を画面に存在させない」)。
+ *
+ * 各値の §2 由来:
+ * - candyRed     = 金魚(赤) #e84a30(りんご飴・たこ焼き等)
+ * - warmAmber    = 提灯の紙 #ff9d45(わたがし・ベビーカステラ等)
+ * - festYellow   = 花火/電球 #ffd166(とうもろこし・型抜き等)
+ * - festPink     = 花火 #ff6b9d(わたがし・スーパーボール等)
+ * - festCyan     = 花火 #4ecdc4(ラムネ・飲み物等)
+ * - waterBlue    = 水面 #1e4d6b(かき氷等)
+ * - paperWhite   = 屋台の幕(白) #f5f0e8(お面・ベビーカステラ等)
+ * - curtainRed   = 屋台の幕(赤) #c0392b(チョコバナナ・たい焼き等)
+ */
+export const FESTIVAL_ACCENTS = {
+  candyRed: '#e84a30',
+  warmAmber: '#ff9d45',
+  festYellow: '#ffd166',
+  festPink: '#ff6b9d',
+  festCyan: '#4ecdc4',
+  waterBlue: '#1e4d6b',
+  paperWhite: '#f5f0e8',
+  curtainRed: '#c0392b',
+} as const
+
+/**
  * 参道レイアウト(GAME_DESIGN_DOCUMENT §2)。単位はメートル。
  * 参道は +Z(手前)から -Z(奥=鳥居)へ伸びる。x=0 が中心線。
  */

@@ -3,9 +3,11 @@ import {
   Color,
   DoubleSide,
   Group,
+  InstancedMesh,
   Mesh,
   MeshLambertMaterial,
   MeshStandardMaterial,
+  Object3D,
   PlaneGeometry,
 } from 'three'
 import { PALETTE } from './palette'
@@ -48,7 +50,9 @@ export function createGround(contacts: readonly ContactCircle[]): WorldObject {
   plane.rotation.x = -Math.PI / 2
   group.add(plane)
 
-  // 接地円。土色をさらに暗く沈めた無発光マテリアル(影の代用)を全接地円で共有する。
+  // 接地円(影の代用)。屋台・群衆・鳥居・縁日屋台ぶんで数が多いため、全接地円を 1 つの
+  // InstancedMesh で描く(draw call を 1 に抑える / ART §6 draw call 予算)。geometry/material は
+  // 全インスタンスで共有。土色をさらに暗く沈めた無発光マテリアル。
   const contactGeometry = new CircleGeometry(1, 16)
   const contactColor = new Color(PALETTE.groundDirt).multiplyScalar(0.35)
   const contactMaterial = new MeshLambertMaterial({
@@ -58,13 +62,20 @@ export function createGround(contacts: readonly ContactCircle[]): WorldObject {
     depthWrite: false,
     side: DoubleSide,
   })
-  for (const contact of contacts) {
-    const circle = new Mesh(contactGeometry, contactMaterial)
-    circle.rotation.x = -Math.PI / 2
-    circle.position.set(contact.x, 0.01, contact.z)
-    circle.scale.setScalar(contact.radius)
-    group.add(circle)
+  const contactMesh = new InstancedMesh(contactGeometry, contactMaterial, Math.max(contacts.length, 1))
+  contactMesh.name = 'contact-circles'
+  contactMesh.count = contacts.length
+  const dummy = new Object3D()
+  dummy.rotation.x = -Math.PI / 2
+  for (let i = 0; i < contacts.length; i++) {
+    const contact = contacts[i]
+    dummy.position.set(contact.x, 0.01, contact.z)
+    dummy.scale.set(contact.radius, contact.radius, contact.radius)
+    dummy.updateMatrix()
+    contactMesh.setMatrixAt(i, dummy.matrix)
   }
+  contactMesh.instanceMatrix.needsUpdate = true
+  group.add(contactMesh)
 
   return {
     object: group,
@@ -73,6 +84,7 @@ export function createGround(contacts: readonly ContactCircle[]): WorldObject {
       planeMaterial.dispose()
       contactGeometry.dispose()
       contactMaterial.dispose()
+      contactMesh.dispose()
     },
   }
 }

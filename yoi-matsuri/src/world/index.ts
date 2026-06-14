@@ -7,6 +7,7 @@ export type { WorldObject } from './types'
 export {
   PALETTE,
   BULB_COLOR,
+  FESTIVAL_ACCENTS,
   APPROACH,
   LANTERN_X,
   lanternZ,
@@ -25,6 +26,12 @@ export {
 export type { LanternAnchor } from './lanterns'
 export { createTorii } from './torii'
 export { createStall, STALL_POSITION, STALL_ID, STALL_BULB_HEIGHT } from './stall'
+export {
+  createFestivalStalls,
+  computeFestivalStallPlacements,
+  FESTIVAL_STALL_COUNT,
+} from './festivalStalls'
+export type { FestivalStallPlacement } from './festivalStalls'
 export { createCrowd, computeCrowdPlacements, crowdSwayAngle } from './crowd'
 export type { CrowdPlacement } from './crowd'
 export { createLighting } from './lighting'
