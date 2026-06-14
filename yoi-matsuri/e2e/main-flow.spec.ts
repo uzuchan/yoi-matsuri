@@ -49,12 +49,21 @@ async function startupWalkAndOpenDialogue(page: Page): Promise<void> {
     await page.waitForTimeout(150)
     await page.keyboard.press('KeyE')
     if (await page.locator(DIALOGUE).count()) {
-      opened = true
-      break
+      // P2: お面屋(z=-23.5)が金魚すくい(z=-26)の手前にあるため、手前の会話が先に開きうる。
+      // 金魚すくいの会話(イントロに「金魚」)以外なら Esc で閉じて歩き続け、金魚すくいに到達する。
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(120)
+      const text = (await page.locator('.dialogue__text').first().textContent()) ?? ''
+      if (text.includes('金魚')) {
+        opened = true
+        break
+      }
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(150)
     }
   }
   await page.keyboard.up('KeyW')
-  expect(opened, '参道を歩いて屋台に到達し会話を開始できる').toBe(true)
+  expect(opened, '参道を歩いて金魚すくい屋台に到達し会話を開始できる').toBe(true)
   await expect(page.locator(DIALOGUE)).toBeVisible()
 }
 

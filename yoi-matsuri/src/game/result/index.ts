@@ -28,3 +28,7 @@ export type {
   RewardInfo,
   FailText,
 } from './stallResult'
+
+// P2 量産屋台の結果規則(屋台が供給するデータ)。
+export { SUPERBALL_RESULT_RULES } from './superballResult'
+export { MASK_RESULT_RULES } from './maskResult'

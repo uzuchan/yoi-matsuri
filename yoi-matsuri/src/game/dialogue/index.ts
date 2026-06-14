@@ -21,3 +21,11 @@ export {
   createGenericStallDialogue,
   createGenericStallScript,
 } from './genericStall'
+
+// P2 量産屋台(スーパーボールすくい / お面屋)の店主会話(状態機械は金魚と共通・スクリプト差し替え)。
+export {
+  createSuperballStallDialogue,
+  createMaskStallDialogue,
+  SUPERBALL_STALL_SCRIPT,
+  MASK_STALL_SCRIPT,
+} from './stallScripts'
