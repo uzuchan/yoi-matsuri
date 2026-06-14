@@ -4,3 +4,9 @@ dist/
 playwright-report/
 test-results/
 *.log
+
+# 内部開発成果物(公開しない: 絶対パス・個人情報・進捗ログを含むため)
+reports/
+
+# R3F並行実装の退避物(未使用。公開しない)
+_parallel-r3f/
