@@ -20,9 +20,11 @@ import {
   Vector3,
   type WebGLRenderer,
 } from 'three'
-import type { Scene, SceneContext } from '../../core/SceneManager'
+import type { SceneContext } from '../../core/SceneManager'
 import type { EventBus } from '../../core/EventBus'
 import type { InputManager } from '../../core/InputManager'
+import type { StallResult } from '../../game/stall'
+import type { StallScene, StallHudState } from '../stall'
 import {
   DEFAULT_TANK_BOUNDS,
   GoldfishSession,
@@ -77,43 +79,33 @@ const PAPER_WARNING_RATIO = 0.3
 
 const FISH_LENGTH = 0.085 // 金魚ボディ長(描画。poiRadius 0.09 と同程度の見た目)
 
+/** 金魚すくいの屋号(汎用 HUD・結果見出しに使う表示名)。 */
+export const GOLDFISH_DISPLAY_NAME = '金魚すくい'
+
+/** 金魚すくいの操作ヒント(開始 2 秒だけ表示 / INTERACTION_SPEC §4 文言)。 */
+export const GOLDFISH_HINT = 'そっと動かそう。速く動かすと紙が破れる'
+
 /**
- * 金魚すくい HUD の表示状態(React へ橋渡しする純データ)。
+ * 金魚すくいシーン(T-006 / StallFramework 移行 D-010)。
  *
- * HUD は EventBus を経由しない: GameEvents 型(core/EventBus.ts)は本タスクで変更禁止のため、
- * 新しいイベント型を足さず、合成点(App.tsx)が setHudListener で直接 React state へ橋渡しする。
- * (会話 HUD は EventBus 経由だが、それは T-004 で型が確定済み。金魚 HUD は scene 内製の購読で完結させる。)
- */
-export interface GoldfishHudState {
-  /** HUD を表示するか(セッション中=true、退出/終了後=false で会話と排他)。 */
-  readonly active: boolean
-  /** 残り時間 [s]。 */
-  readonly timeRemaining: number
-  /** ポイ耐久比 [0..1](ゲージ・紙の劣化見た目と連動)。 */
-  readonly durabilityRatio: number
-  /** お椀へ確保した数。 */
-  readonly secured: number
-}
-
-/** HUD 状態の購読者(合成点が React state へ橋渡し)。 */
-export type GoldfishHudListener = (state: GoldfishHudState) => void
-
-/**
- * 金魚すくいシーン(T-006)。T-005 の純TSロジック GoldfishSession を唯一の真実として駆動し、
- * 俯瞰水槽・ポイ・金魚・お椀を ART 準拠で描画する。物理は再実装しない(snapshot を読むだけ)。
+ * 屋台フレームワークの StallScene(汎用 minigame の中身)として駆動される。T-005 の純TSロジック
+ * GoldfishSession を唯一の真実として、俯瞰水槽・ポイ・金魚・お椀を ART 準拠で描画する。
+ * 物理は再実装しない(snapshot を読むだけ)。**プレイヤー視点の挙動・難度・見た目・結果・報酬は
+ * 移行前と完全に同一**(物理・描画は無改修。HUD は汎用 StallHudState で表現)。
  *
  * - カメラ: 俯角70°固定、水槽が画面の約70%(ART §5)。
  * - 入力(INTERACTION_SPEC §3.3): マウス→水面投影で target / 左押下→submerge / 左解放→lift /
  *   お椀上クリック→secure。矢印キーでポイ移動 / Space で沈める・持ち上げトグル / Esc で退出(quit)。
  * - 毎フレーム GoldfishSession.update(dt, input) を呼び、戻り値の GoldfishEvent[] と submerge エッジを
- *   eventMap で EventBus/sfx:play へ写像(発火は単一経路・二重発火なし)。
- * - HUD は React(ui/GoldfishHud)。本シーンは 'goldfish:hud' で表示状態を橋渡しする。
+ *   eventMap で sfx:play / stall-finished へ写像(発火は単一経路・finished 二重発火なし)。
+ * - HUD は React(ui/StallHud)。本シーンは setHudListener で汎用 StallHudState を橋渡しする
+ *   (gauge=ポイ耐久・score=確保数。金魚の数値はそのまま。EventBus 非経由)。
  *
  * GPU リソースは dispose() で全解放(idempotent)。update 内でフレーム毎の new を行わない
  * (ワーク変数を再利用)。
  */
-export class GoldfishScene implements Scene {
-  readonly id = 'goldfish' as const
+export class GoldfishScene implements StallScene {
+  readonly id = 'minigame' as const
 
   private readonly renderer: WebGLRenderer
   private readonly scene: ThreeScene
@@ -128,10 +120,10 @@ export class GoldfishScene implements Scene {
   private events: EventBus | null = null
   private input: InputManager | null = null
   /** HUD 状態の購読者(合成点が注入。EventBus を経由しない React 橋渡し)。 */
-  private hudListener: GoldfishHudListener | null = null
+  private hudListener: ((state: StallHudState | null) => void) | null = null
 
-  /** 合成点(App.tsx)から HUD 購読者を注入する。 */
-  setHudListener(listener: GoldfishHudListener): void {
+  /** 合成点 / MinigameScene から汎用 HUD 購読者を注入する。 */
+  setHudListener(listener: (state: StallHudState | null) => void): void {
     this.hudListener = listener
   }
 
@@ -186,8 +178,15 @@ export class GoldfishScene implements Scene {
     maxZ: DEFAULT_TANK_BOUNDS.radiusZ,
   }
 
-  constructor(renderer: WebGLRenderer) {
+  /** 屋台ID(stall:finished の payload に載せる。Definition が注入)。 */
+  private readonly stallId: string
+  /** 屋号(汎用 HUD の見出し)。 */
+  private readonly displayName: string
+
+  constructor(renderer: WebGLRenderer, stallId: string, displayName: string = GOLDFISH_DISPLAY_NAME) {
     this.renderer = renderer
+    this.stallId = stallId
+    this.displayName = displayName
     this.scene = new ThreeScene()
     this.scene.fog = new FogExp2(COLOR_FOG, 0.12)
     this.scene.background = new Color(COLOR_FOG)
@@ -409,8 +408,8 @@ export class GoldfishScene implements Scene {
   }
 
   exit(): void {
-    // HUD を閉じる(会話と排他のため、抜けたら非表示)。
-    this.hudListener?.({ active: false, timeRemaining: 0, durabilityRatio: 0, secured: 0 })
+    // HUD を閉じる(会話/結果と排他のため、抜けたら非表示)。
+    this.hudListener?.(null)
     this.events = null
     this.input = null
     this.session = null
@@ -545,24 +544,25 @@ export class GoldfishScene implements Scene {
     return { x: hit.x, z: hit.z }
   }
 
-  /** 発火指示列を EventBus へ流す(単一経路)。 */
+  /** 発火指示列を EventBus へ流す(単一経路 / D-010)。 */
   private flush(instructions: readonly EmitInstruction[]): void {
     const events = this.events
     if (!events) return
     for (const ins of instructions) {
-      if (ins.event === 'goldfish:finished') {
-        // finished は 1 回だけ(二重発火しない)。終了後の遷移は App が購読して行う。
-        if (this.finishedEmitted) continue
-        this.finishedEmitted = true
-        events.emit('goldfish:finished', ins.payload)
-      } else if (ins.event === 'goldfish:caught') {
-        events.emit('goldfish:caught', ins.payload)
-      } else if (ins.event === 'goldfish:poi-torn') {
-        events.emit('goldfish:poi-torn', ins.payload)
+      if (ins.event === 'stall-finished') {
+        // 終了は 1 回だけ stall:finished を発火する(二重発火しない)。遷移は合成点が購読して行う。
+        this.emitFinished(ins.result)
       } else {
         events.emit('sfx:play', ins.payload)
       }
     }
+  }
+
+  /** stall:finished を1回だけ発火する(基盤側の単発ガード / StallFramework §1.3)。 */
+  private emitFinished(result: StallResult): void {
+    if (this.finishedEmitted) return
+    this.finishedEmitted = true
+    this.events?.emit('stall:finished', { stallId: this.stallId, result })
   }
 
   // --- 描画同期 ---
@@ -639,15 +639,22 @@ export class GoldfishScene implements Scene {
 
   // --- HUD ---
 
-  /** HUD 表示状態(残時間・耐久・確保数)を React へ橋渡しする(EventBus 非経由)。 */
+  /**
+   * HUD 表示状態(残時間・耐久ゲージ・確保数)を汎用 StallHudState で React へ橋渡しする
+   * (EventBus 非経由)。金魚の数値はそのまま:gauge=ポイ耐久比 / score=確保数(GDD §5 / 移行前と同一)。
+   */
   private emitHud(): void {
     const snap = this.session?.snapshot()
     if (!snap) return
     this.hudListener?.({
       active: true,
+      displayName: this.displayName,
       timeRemaining: snap.timeRemaining,
-      durabilityRatio: snap.poi.durabilityRatio,
-      secured: snap.secured,
+      gauge: { ratio: snap.poi.durabilityRatio, label: 'ポイ' },
+      score: snap.secured,
+      scoreLabel: 'すくった',
+      scoreUnit: '匹',
+      hint: GOLDFISH_HINT,
     })
   }
 

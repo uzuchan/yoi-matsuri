@@ -12,13 +12,16 @@ import {
  * 写像の正しさと「二重発火しない/取りこぼさない」を固定する。
  */
 
-/** 指示を "event:name" の文字列へ畳んで比較しやすくする。 */
+/**
+ * 指示を文字列へ畳んで比較しやすくする(D-010 後)。
+ * sfx:play は 'sfx:<name>'、stall-finished は 'finished(<score>,<reason>)'。
+ * 屋台固有 GameEvents(goldfish:caught/poi-torn)は EventBus へ載せず(sfx と listener で処理)、
+ * 終了は屋台横断の stall-finished{result} へ集約された。
+ */
 function flatten(instructions: readonly EmitInstruction[]): string[] {
   return instructions.map((ins) => {
     if (ins.event === 'sfx:play') return `sfx:${ins.payload.name}`
-    if (ins.event === 'goldfish:caught') return `goldfish:caught(${ins.payload.total})`
-    if (ins.event === 'goldfish:poi-torn') return 'goldfish:poi-torn'
-    return `goldfish:finished(${ins.payload.caught},${ins.payload.reason})`
+    return `finished(${ins.result.score},${ins.result.reason})`
   })
 }
 
@@ -38,9 +41,9 @@ describe('mapSubmergeEdge', () => {
 })
 
 describe('mapGoldfishEvent', () => {
-  it('caught → sfx catch + goldfish:caught{total}', () => {
+  it('caught → sfx catch(GameEvents は出さない / D-010: HUD は listener 経由)', () => {
     const ev: GoldfishEvent = { type: 'caught', total: 2, fishId: 3 }
-    expect(flatten(mapGoldfishEvent(ev))).toEqual(['sfx:catch', 'goldfish:caught(2)'])
+    expect(flatten(mapGoldfishEvent(ev))).toEqual(['sfx:catch'])
   })
   it('secured → sfx secure(GameEvents は出さない)', () => {
     const ev: GoldfishEvent = { type: 'secured', secured: 1, fishId: 0 }
@@ -54,13 +57,17 @@ describe('mapGoldfishEvent', () => {
     const ev: GoldfishEvent = { type: 'paper-warning' }
     expect(flatten(mapGoldfishEvent(ev))).toEqual(['sfx:paper-warning'])
   })
-  it('poi-torn → sfx paper-tear + goldfish:poi-torn', () => {
+  it('poi-torn → sfx paper-tear のみ(D-010: goldfish:poi-torn は廃止)', () => {
     const ev: GoldfishEvent = { type: 'poi-torn' }
-    expect(flatten(mapGoldfishEvent(ev))).toEqual(['sfx:paper-tear', 'goldfish:poi-torn'])
+    expect(flatten(mapGoldfishEvent(ev))).toEqual(['sfx:paper-tear'])
   })
-  it('finished → goldfish:finished{caught,reason}(sfx は出さない)', () => {
+  it('finished → stall-finished{score,reason}(timeout は据え置き)', () => {
     const ev: GoldfishEvent = { type: 'finished', reason: 'timeout', caught: 3 }
-    expect(flatten(mapGoldfishEvent(ev))).toEqual(['goldfish:finished(3,timeout)'])
+    expect(flatten(mapGoldfishEvent(ev))).toEqual(['finished(3,timeout)'])
+  })
+  it('finished(torn)→ stall-finished の reason は broke へ正規化(torn→broke)', () => {
+    const ev: GoldfishEvent = { type: 'finished', reason: 'torn', caught: 0 }
+    expect(flatten(mapGoldfishEvent(ev))).toEqual(['finished(0,broke)'])
   })
 })
 
@@ -75,13 +82,10 @@ describe('mapGoldfishEvents(配列)', () => {
     ]
     expect(flatten(mapGoldfishEvents(events))).toEqual([
       'sfx:catch',
-      'goldfish:caught(1)',
       'sfx:catch',
-      'goldfish:caught(2)',
       'sfx:paper-warning',
       'sfx:paper-tear',
-      'goldfish:poi-torn',
-      'goldfish:finished(0,torn)',
+      'finished(0,broke)',
     ])
   })
 
@@ -89,14 +93,12 @@ describe('mapGoldfishEvents(配列)', () => {
     expect(mapGoldfishEvents([])).toEqual([])
   })
 
-  it('同じ caught が複数(複数同時捕獲)でも個別に写像する', () => {
+  it('同じ caught が複数(複数同時捕獲)でも個別に sfx へ写像する', () => {
     const events: GoldfishEvent[] = [
       { type: 'caught', total: 1, fishId: 0 },
       { type: 'caught', total: 2, fishId: 1 },
     ]
     const out = flatten(mapGoldfishEvents(events))
     expect(out.filter((s) => s === 'sfx:catch')).toHaveLength(2)
-    expect(out).toContain('goldfish:caught(1)')
-    expect(out).toContain('goldfish:caught(2)')
   })
 })

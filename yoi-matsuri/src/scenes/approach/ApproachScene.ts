@@ -9,6 +9,7 @@ import {
 import type { Scene, SceneContext } from '../../core/SceneManager'
 import type { EventBus } from '../../core/EventBus'
 import type { InputManager } from '../../core/InputManager'
+import type { StallPlacement } from '../stall'
 import {
   APPROACH,
   PALETTE,
@@ -36,6 +37,7 @@ import {
   mouseForwardVector,
   pickRepresentativeLanterns,
   ProximityTracker,
+  INTERACT_RADIUS,
   walkBobOffset,
   type ContactCircle,
   type FireworkColor,
@@ -108,7 +110,25 @@ export class ApproachScene implements Scene {
   private readonly player: WorldObject
   private readonly prompt: PromptLabel
   private readonly fireworks: FireworksObject
-  private readonly proximity = new ProximityTracker()
+  /**
+   * 屋台ごとの近接トラッカー(StallFramework §4.2 / D-010)。各屋台 placement に対し1個ずつ持ち、
+   * enter/leave エッジを stall:approach{stallId}/stall:leave{stallId} で発火する。
+   * 既定では金魚すくい1軒(setStallPlacements 未呼び出し時の後方互換)。
+   */
+  private stallTrackers: { stallId: string; placement: StallPlacement; tracker: ProximityTracker }[] = [
+    {
+      stallId: STALL_ID,
+      placement: {
+        position: { x: STALL_POSITION.x, z: STALL_POSITION.z },
+        facing: -Math.PI / 2,
+        interactRadius: INTERACT_RADIUS,
+        promptY: PROMPT_LABEL_Y,
+      },
+      tracker: new ProximityTracker(INTERACT_RADIUS),
+    },
+  ]
+  /** 現在近接中の屋台 id(なければ null)。E/クリック遷移と prompt の対象。 */
+  private nearStallId: string | null = null
 
   // --- T-009: 花火タイマー / 足音 / 歩行ボブ ---
   /** 花火の打ち上げタイマー(初回〜10s、以降30〜45s間隔)。 */
@@ -135,21 +155,37 @@ export class ApproachScene implements Scene {
   private readonly lookTarget = new Vector3()
 
   // --- T-004: 近接中の E/左クリック → 会話(dialogue)遷移の配線 ---
-  /** プレイヤーが屋台の近接圏内にいるか(updateProximity が維持)。 */
-  private inProximity = false
   /** E キーの立ち上がりエッジ検出用(前フレーム押下状態)。 */
   private prevInteractDown = false
   /** マウス左ボタンの立ち上がりエッジ検出用(前フレーム押下状態)。 */
   private prevMousePressed = false
   /**
-   * 会話シーンへの遷移ハンドラ。App.tsx(合成点)が SceneManager.transition('dialogue') を
+   * 会話シーンへの遷移ハンドラ。App.tsx(合成点)が SceneManager.transition('dialogue', payload) を
    * 束縛して注入する。Scene は SceneManager を直接参照しない core 設計(DialogueScene と同方式)。
+   * payload で近接中の stallId を運ぶ(StallFramework §4.4)。
    */
-  private transitionHandler: ((to: 'dialogue') => void) | null = null
+  private transitionHandler: ((to: 'dialogue', payload?: unknown) => void) | null = null
 
-  /** App.tsx(合成点)から会話遷移ハンドラを注入する(T-004)。 */
-  setTransitionHandler(handler: (to: 'dialogue') => void): void {
+  /** App.tsx(合成点)から会話遷移ハンドラを注入する(T-004 / 多屋台 §4.4)。 */
+  setTransitionHandler(handler: (to: 'dialogue', payload?: unknown) => void): void {
     this.transitionHandler = handler
+  }
+
+  /**
+   * 合成点(App.tsx)から全屋台の placement を注入する(StallFramework §4.2)。
+   * 各 placement に近接トラッカーを1個ずつ持ち、全屋台に対し enter/leave を判定する。
+   * 未呼び出し時は既定の金魚すくい1軒(constructor の初期値)で動く(後方互換)。
+   */
+  setStallPlacements(
+    stalls: readonly { stallId: string; displayName: string; placement: StallPlacement }[],
+  ): void {
+    if (stalls.length === 0) return
+    this.stallTrackers = stalls.map((s) => ({
+      stallId: s.stallId,
+      placement: s.placement,
+      tracker: new ProximityTracker(s.placement.interactRadius),
+    }))
+    this.nearStallId = null
   }
 
   constructor(renderer: WebGLRenderer) {
@@ -220,10 +256,10 @@ export class ApproachScene implements Scene {
     this.events = ctx.events
     this.input = ctx.input
     // 再入場に備えて状態をリセットする(プロンプト非表示・近接圏外・視線正面)。
-    this.proximity.reset()
+    for (const s of this.stallTrackers) s.tracker.reset()
     this.prompt.setVisible(false)
     this.lookYaw = 0
-    this.inProximity = false
+    this.nearStallId = null
     // 歩行ボブ・足音の状態は再入場時にリセット(会話復帰直後に1歩鳴らさない)。
     this.bobIntensity = 0
     this.movedThisFrame = false
@@ -377,35 +413,56 @@ export class ApproachScene implements Scene {
   // --- 近接判定 ---
 
   /**
-   * プレイヤーと屋台の近接エッジを判定し、enter で stall:approach、leave で stall:leave を
-   * 各1回発火する(ProximityTracker が単発を保証)。プロンプトの表示/非表示も切り替える。
+   * 全屋台 placement に対しプレイヤーの近接エッジを判定する(StallFramework §4.2)。
+   * 各屋台で enter で stall:approach{stallId}、leave で stall:leave{stallId} を各1回発火する
+   * (ProximityTracker が単発を保証)。同時に複数圏内になった場合は最近傍1軒を採用してプロンプト/
+   * 遷移対象を一意化する(§4.2 タイブレーク)。プロンプトは近接中の屋台位置へ張り替える(§4.2 案a)。
    */
   private updateProximity(): void {
-    const edge = this.proximity.update(this.playerPos, STALL_POSITION)
-    if (edge === 'enter') {
-      this.inProximity = true
-      this.events?.emit('stall:approach', { stallId: STALL_ID })
-      // T-009 / INTERACTION_SPEC §3.1: 近接圏に入った瞬間に prompt を1回(stall:approach と同時)。
-      // 圏内滞在中の連続発火はない(エッジ判定が単発を保証)。
-      this.events?.emit('sfx:play', { name: 'prompt' })
-      this.prompt.setVisible(true)
-    } else if (edge === 'leave') {
-      this.inProximity = false
-      this.events?.emit('stall:leave', { stallId: STALL_ID })
-      this.prompt.setVisible(false)
+    // 全屋台のエッジを評価し、enter/leave を発火する(評価漏れによる単発ずれを避けるため無条件に回す)。
+    let nearestId: string | null = null
+    let nearestDistSq = Infinity
+    for (const s of this.stallTrackers) {
+      const p = s.placement.position
+      const edge = s.tracker.update(this.playerPos, { x: p.x, z: p.z })
+      if (edge === 'enter') {
+        this.events?.emit('stall:approach', { stallId: s.stallId })
+        // INTERACTION_SPEC §3.1: 近接圏に入った瞬間に prompt 音を1回(stall:approach と同時)。
+        this.events?.emit('sfx:play', { name: 'prompt' })
+      } else if (edge === 'leave') {
+        this.events?.emit('stall:leave', { stallId: s.stallId })
+      }
+      // いま圏内なら最近傍候補に入れる(プロンプト/遷移対象の一意化)。
+      if (s.tracker.isInside) {
+        const dx = this.playerPos.x - p.x
+        const dz = this.playerPos.z - p.z
+        const d2 = dx * dx + dz * dz
+        if (d2 < nearestDistSq) {
+          nearestDistSq = d2
+          nearestId = s.stallId
+        }
+      }
     }
-    // 'none' は何もしない(滞在中・圏外滞在中の連続発火を起こさない)。
 
-    // T-004: 近接圏内で E または左クリックの立ち上がりエッジ → 会話(dialogue)へ遷移する
-    // (INTERACTION_SPEC §3.1)。圏外では何も起きない(AC1)。エッジ検出は毎フレーム無条件に
-    // 評価し、評価漏れによる立ち上がりずれを避ける。遷移は合成点で束縛したハンドラ経由
-    // (Scene は SceneManager を直接参照しない core 設計 = DialogueScene と同方式)。
+    // 近接中の屋台が変わったら、プロンプトを当該屋台位置へ張り替える(同時1軒前提 = 案a)。
+    if (nearestId !== this.nearStallId) {
+      this.nearStallId = nearestId
+      if (nearestId !== null) {
+        const placement = this.stallTrackers.find((s) => s.stallId === nearestId)!.placement
+        this.prompt.setPosition(placement.position.x - 1.2, placement.promptY, placement.position.z)
+        this.prompt.setVisible(true)
+      } else {
+        this.prompt.setVisible(false)
+      }
+    }
+
+    // 近接圏内で E または左クリックの立ち上がりエッジ → 会話(dialogue)へ遷移する(stallId を運ぶ / §4.4)。
     this.updateInteract()
   }
 
   /**
-   * 近接圏内での E / 左クリック(立ち上がりエッジ)で会話へ遷移する(T-004)。
-   * 'sfx:interact'(AUDIO_SPEC §4: 屋台インタラクト責任 = scenes/approach)を発火する。
+   * 近接圏内での E / 左クリック(立ち上がりエッジ)で会話へ遷移する(T-004 / 多屋台 §4.4)。
+   * 近接中の stallId を payload で運ぶ。'interact' 音を発火する(AUDIO_SPEC §4)。
    */
   private updateInteract(): void {
     const input = this.input
@@ -419,9 +476,9 @@ export class ApproachScene implements Scene {
     const clickEdge = mousePressed && !this.prevMousePressed
     this.prevMousePressed = mousePressed
 
-    if (this.inProximity && (interactEdge || clickEdge)) {
+    if (this.nearStallId !== null && (interactEdge || clickEdge)) {
       this.events?.emit('sfx:play', { name: 'interact' })
-      this.transitionHandler?.('dialogue')
+      this.transitionHandler?.('dialogue', { stallId: this.nearStallId })
     }
   }
 

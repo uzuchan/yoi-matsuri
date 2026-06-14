@@ -1,8 +1,14 @@
 import type { EventBus } from './EventBus'
 import type { InputManager } from './InputManager'
 
-/** Vertical Sliceの全シーンID(TECHNICAL_ARCHITECTURE §3)。 */
-export type SceneId = 'approach' | 'dialogue' | 'goldfish' | 'result'
+/**
+ * 全シーンID(TECHNICAL_ARCHITECTURE §3 / D-010)。
+ *
+ * 屋台数に依存しない固定4種。'goldfish' は汎用 'minigame' へ集約され、「どの屋台か」は
+ * 遷移 payload の stallId が運ぶ(StallFramework §3.2)。これにより ALLOWED_TRANSITIONS の
+ * 網羅チェック(不正遷移 throw = D-006 の価値)を保ったまま屋台を無限に追加できる。
+ */
+export type SceneId = 'approach' | 'dialogue' | 'minigame' | 'result'
 
 /** Scene.enter に渡されるコンテキスト。シーンはここからcore APIへアクセスする。 */
 export interface SceneContext {
@@ -24,14 +30,15 @@ export interface Scene {
 }
 
 /**
- * 許可遷移表。ここにない遷移は不正としてthrowする。
- * approach(参道) → dialogue(会話) → goldfish(金魚すくい) → result(結果) → approach
+ * 許可遷移表(D-010 再設計)。ここにない遷移は不正としてthrowする。
+ * approach(参道) → dialogue(会話) → minigame(屋台ミニゲーム) → result(結果) → approach
  * 会話からは参道へ戻ることもできる(誘いを断る)。
+ * 屋台が何軒でも遷移表は4状態のまま。「どの屋台か」は payload の stallId が運ぶ(§3.4)。
  */
 const ALLOWED_TRANSITIONS: Readonly<Record<SceneId, readonly SceneId[]>> = {
   approach: ['dialogue'],
-  dialogue: ['approach', 'goldfish'],
-  goldfish: ['result'], // T-007: 金魚すくい終了は必ず result 経由。T-006 の一時 goldfish→approach は撤去(result→approach は下記で許可済み)
+  dialogue: ['approach', 'minigame'], // 旧 'goldfish' → 'minigame'
+  minigame: ['result'], // 屋台ミニゲーム終了は必ず result 経由
   result: ['approach'],
 }
 

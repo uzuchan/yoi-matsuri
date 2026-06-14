@@ -4,6 +4,8 @@ import { EventBus } from '../../src/core/EventBus'
 import type { GameKey, InputManager, MouseState, SceneContext } from '../../src/core'
 import { ResultScene, type ResultHudState } from '../../src/scenes/result/ResultScene'
 import type { ApproachScene } from '../../src/scenes/approach/ApproachScene'
+import { createStallRegistry } from '../../src/scenes/stall/definitions'
+import { STALL_ID } from '../../src/world'
 
 /**
  * ResultScene(T-007)の駆動ロジック契約のテスト。
@@ -45,7 +47,9 @@ function setup() {
   const events = new EventBus()
   const fakeInput = createFakeInput()
   const bg = createBackgroundStub()
-  const scene = new ResultScene(bg.background)
+  // D-010: ResultScene は registry の resultRules/placement で結果・カメラを解決する。
+  const registry = createStallRegistry()
+  const scene = new ResultScene(bg.background, registry)
   const transition = vi.fn()
   scene.setTransitionHandler(transition)
   const hudStates: ResultHudState[] = []
@@ -55,8 +59,16 @@ function setup() {
 
 const DT = 1 / 60
 
+/**
+ * D-010: enter の payload は { stallId, result: StallResult }。score=確保数、reason=timeout で
+ * 「すくえなかった/成功」段を再現する(従来 caught と同じ意味)。
+ */
 function enterWith(scene: ResultScene, events: EventBus, input: InputManager, caught: number): void {
-  const ctx: SceneContext = { events, input, payload: { caught, reason: 'timeout' } }
+  const ctx: SceneContext = {
+    events,
+    input,
+    payload: { stallId: STALL_ID, result: { score: caught, reason: 'timeout' } },
+  }
   scene.enter(ctx)
 }
 
@@ -68,15 +80,16 @@ describe('ResultScene(駆動ロジック / T-007)', () => {
     expect(hudStates).toHaveLength(1)
     expect(hudStates[0].active).toBe(true)
     expect(hudStates[0].outcome?.tier).toBe('success')
-    expect(hudStates[0].outcome?.caught).toBe(2)
+    expect(hudStates[0].outcome?.score).toBe(2)
     expect(hudStates[0].outcome?.reward.id).toBe('reward:bag-small')
   })
 
-  it('payload が空/不正でも 0 匹(失敗)として安全に扱う', () => {
+  it('payload に result がない/不正でも 0 点(失敗)として安全に扱う', () => {
     const { scene, events, input, hudStates } = setup()
-    scene.enter({ events, input } as SceneContext) // payload なし
+    // stallId は必要(未登録だと throw)だが result が無ければ 0 点・破損へフォールバックする。
+    scene.enter({ events, input, payload: { stallId: STALL_ID } } as SceneContext)
     expect(hudStates[0].outcome?.tier).toBe('fail')
-    expect(hudStates[0].outcome?.caught).toBe(0)
+    expect(hudStates[0].outcome?.score).toBe(0)
   })
 
   it('結果表示時に sfx を発火する: 成功/大成功=result-success / 失敗=result-fail(AUDIO_SPEC §4)', () => {

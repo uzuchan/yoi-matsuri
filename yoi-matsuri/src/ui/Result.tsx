@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import type { ResultOutcome } from '../game/result'
+import type { StallOutcome } from '../game/result'
 
 /**
  * 結果オーバーレイ(T-007 段B / GDD §3.2・INTERACTION_SPEC §3.4・§4・ART §2)。
@@ -18,7 +18,7 @@ import type { ResultOutcome } from '../game/result'
  */
 export interface ResultProps {
   /** 表示する結果(ResultScene 由来。合成点が橋渡し)。 */
-  outcome: ResultOutcome
+  outcome: StallOutcome
   /** 「参道へ戻る」確定(マウス経路)。合成点が ResultScene.requestReturn へ集約する。 */
   onReturn: () => void
 }

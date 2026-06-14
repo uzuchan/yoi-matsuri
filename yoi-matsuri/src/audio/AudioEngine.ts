@@ -271,8 +271,9 @@ export class AudioEngine {
     const ctx = this.ctx
     if (!ctx) return
     const t = ctx.currentTime
-    // goldfish 中は環境音を -6dB(没入)。それ以外(approach/dialogue/result)では復帰。
-    const duck = to === 'goldfish' ? DUCK_FACTOR : 1
+    // minigame(屋台ミニゲーム)中は環境音を -6dB(没入)。それ以外(approach/dialogue/result)では復帰。
+    // D-010: 旧 'goldfish' シーンIDは固定4種の 'minigame' へ集約された(挙動=金魚すくい中のダッキングは不変)。
+    const duck = to === 'minigame' ? DUCK_FACTOR : 1
     this.rampGain(this.ambientDuck, duck, t, DUCK_SEC)
     this.rampGain(this.musicDuck, duck, t, DUCK_SEC)
   }

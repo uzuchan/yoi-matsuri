@@ -15,3 +15,9 @@ export {
   CHOICE_LATER,
 } from './script'
 export type { DialogueScript, DialogueLine, DialogueChoiceDef } from './script'
+
+// StallFramework §2.5: 固有会話を持たない屋台のための汎用フォールバック会話。
+export {
+  createGenericStallDialogue,
+  createGenericStallScript,
+} from './genericStall'

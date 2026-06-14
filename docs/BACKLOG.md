@@ -23,6 +23,24 @@
 - T-005とT-006を分けるのは、物理ロジック(unit test対象)と描画統合を別レビューにするため。Ownerは同一なのでファイル競合なし
 - 音響(T-008)は各操作イベントが出揃った後に一括実装する。それまでのタスクはEventBusへのイベント発火だけを実装しておく(AUDIO_SPECのイベント表が契約)
 
+## 全屋台プレイアブル化プログラム(StallFramework)
+
+設計: reports/design/{STALL_FRAMEWORK.md, MINIGAME_ARCHETYPES.md, STALL_ROADMAP.md}。6原型(SCOOP/AIM/TIMING/TRACE/CHOICE/CARRY)で19屋台を吸収。
+
+| フェーズ | 内容 | 状態 |
+|---|---|---|
+| P0 | StallFramework基盤(BaseStallSession/Registry/汎用minigameシーン/会話・結果・近接のstallId化/SceneManager D-010) | COMPLETE(2026-06-14) |
+| P1 | 金魚すくいをStallDefinition化し基盤へ移行(挙動・会話・結果・見た目 完全同一) | COMPLETE(2026-06-14) |
+| P2 | 量産実証: スーパーボール(SCOOP)+ お面(CHOICE) | TODO |
+| P3 | AIM原型: 射的・輪投げ | TODO |
+| P4 | TIMING原型(8軒): かき氷/ラムネ/とうもろこし/焼きとうきび/たこ焼き/焼きそば/カステラ/たい焼き | TODO |
+| P5 | CARRY原型(4軒): りんご飴/あんず飴/チョコバナナ/わたがし | TODO |
+| P6 | TRACE(型抜き)+ CHOICE残(くじ/駄菓子) | TODO |
+
+新屋台の追加手順(P0で確立): game/<id>のStallSession実装 → scenes/<id>のStallScene → scenes/stall/definitions/<id>.ts に StallDefinition 1件 → registryにregister 1行。App無編集で近接・会話・結果・報酬が自動配線。
+
+---
+
 ## 機能タスク(VS完成後)
 
 | Task ID | 内容 | Owner | Reviewer | 状態 |

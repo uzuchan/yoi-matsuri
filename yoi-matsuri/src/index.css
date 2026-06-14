@@ -159,7 +159,8 @@ body {
 }
 
 /*
- * 金魚すくい HUD(src/ui/GoldfishHud.tsx / T-006)。
+ * 屋台ミニゲーム HUD(src/ui/StallHud.tsx / 旧 GoldfishHud。T-006 → StallFramework D-010)。
+ * クラス名 .goldfish-hud* は汎用屋台 HUD のスタイルとして共有する(金魚の見た目を回帰0で維持)。
  * ART §2: UIテキスト #f5f0e8 / アクセント #ff9d45 / 背景 #0a0e2e の80%透過パネル。
  * INTERACTION_SPEC §5: テキスト16px以上。マウス不要で読める(pointer-events:none で操作を奪わない)。
  * .hud-root が pointer-events:none のため、本 HUD も読み取り専用で操作を奪わない。

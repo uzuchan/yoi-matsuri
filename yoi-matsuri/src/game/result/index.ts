@@ -1,15 +1,30 @@
 /**
- * 結果ドメイン(T-007 / GDD §3.2)。three / react / DOM 非依存の純TS(D-003)。
+ * 結果ドメイン(T-007 / GDD §3.2 / StallFramework §5・D-010)。
+ * three / react / DOM 非依存の純TS(D-003)。
  *
- * 金魚すくい終了時の確保数(secured = finished.caught)から、店主の反応の段・見出し・
- * 店主セリフ・報酬を確定する。合成点(App.tsx)・ResultScene・ui/Result がこのデータを表示する。
+ * - 汎用(屋台横断): resolveStallResult / tierForScore / StallResultRules / StallOutcome / RewardInfo
+ *   = 屋台が供給する score→tier→{見出し/店主セリフ/報酬} 規則と共通解決ロジック。
+ * - 金魚固有(後方互換): resolveResult / tierForCaught / REWARDS / GOLDFISH_RESULT_RULES …
+ *   = 現行 API を維持(回帰0)。実体は汎用へ委譲する。
  */
 export {
   resolveResult,
   tierForCaught,
   REWARDS,
+  GOLDFISH_RESULT_RULES,
   SHOPKEEPER,
   SUCCESS_THRESHOLD,
   GREAT_THRESHOLD,
 } from './reward'
-export type { ResultTier, ResultReason, RewardId, RewardInfo, ResultOutcome } from './reward'
+export type { ResultTier, ResultReason, RewardId, ResultOutcome } from './reward'
+
+export {
+  resolveStallResult,
+  tierForScore,
+} from './stallResult'
+export type {
+  StallResultRules,
+  StallOutcome,
+  RewardInfo,
+  FailText,
+} from './stallResult'

@@ -1,106 +1,66 @@
-import { PerspectiveCamera, Vector3 } from 'three'
+import type { PerspectiveCamera } from 'three'
 import type { EventBus, GameKey, InputManager, Scene, SceneContext } from '../../core'
+import type { StallResult } from '../../game/stall'
+import { resolveStallResult, type StallOutcome } from '../../game/result'
 import type { ApproachScene } from '../approach/ApproachScene'
-import { resolveResult, type ResultOutcome, type ResultReason } from '../../game/result'
-import { STALL_POSITION } from '../../world'
+import type { StallRegistry } from '../stall'
+import { computeResultCamera, readStallId } from '../stall'
 
 /**
  * 結果表示の HUD 状態(React へ橋渡しする純データ)。
  *
- * 金魚 HUD(T-006)と同様、EventBus を経由しない: GameEvents 型(core/EventBus.ts)は本タスクで
- * 変更禁止のため新しいイベント型を足さず、合成点(App.tsx)が setResultListener で直接 React state へ
- * 橋渡しする(会話/金魚 HUD と排他で表示する)。
+ * 金魚 HUD(T-006)と同様、EventBus を経由しない: 合成点(App.tsx)が setResultListener で直接
+ * React state へ橋渡しする(会話/ミニゲーム HUD と排他で表示する)。
+ *
+ * StallFramework 移行(D-010): outcome は屋台横断の StallOutcome(tier/score/見出し/店主セリフ/報酬)。
+ * 金魚すくいでは score=確保数。表示(ui/Result)は tier/heading/shopkeeperLine/reward のみ使うため
+ * 移行前と同一の見え方になる。
  */
 export interface ResultHudState {
   /** 結果オーバーレイを表示するか(result シーン中=true、抜けたら false で他HUDと排他)。 */
   readonly active: boolean
-  /** 段・見出し・店主セリフ・報酬(GDD §3.2)。active=false のときは null。 */
-  readonly outcome: ResultOutcome | null
+  /** 段・見出し・店主セリフ・報酬。active=false のときは null。 */
+  readonly outcome: StallOutcome | null
 }
 
 /** 結果 HUD 状態の購読者(合成点が React state へ橋渡し)。 */
 export type ResultHudListener = (state: ResultHudState) => void
 
-/** goldfish:finished の payload 形(T-006 引き継ぎ)。ResultScene が enter の payload で受ける。 */
-interface ResultPayload {
-  caught: number
-  reason: ResultReason
-}
-
-// --- result 専用固定カメラ(ART §5 result の裁定数値 / REV-T-007-1 Major-2)---
-// approach の追従カメラ(後方5m・高3.2m・俯角15°・FOV55°)とは別インスタンス。result 中のみ使用。
-// 屋台の正面(参道側=approach でプレイヤーが屋台に対面した向き)から店主頭部を見る固定構図。
-//
-// 座標系の確認(world/stall.ts / world/lighting.ts):
-//   - 屋台 group は STALL_POSITION(x:5,z:-26)に置かれ rotation.y=-90°。
-//   - 店主(keeper)は local(0.3,0,halfD-0.5)= group 回転後 world ≈ (4.5, _, -25.7)。
-//     頭部 local y=1.66 → 店主頭部 world ≈ (4.5, 1.66, -25.7)。
-//   - 裸電球2個は world ≈ (5,2.1,-26.9)/(5,2.1,-25.1)。
-//   - approach のプロンプト/プレイヤーは参道中心側(-x)から屋台へ対面する(prompt が STALL_x-1.2=3.8)。
-//   - 屋台 PointLight(§7-4 屋台前を最も明るく)は world ≈ (4, _, -26)=屋台中心の -x 側に置かれる。
-// よって ART §5「正面=参道側=プレイヤーが屋台に対面した向き」かつ「屋台前(裸電球)が最も明るい」
-// (§7-4)を同時に満たす視点は屋台中心の -x 方向。カメラは -x 側へ水平距離 4.5m・高さ 1.8m に置く。
-//
-// T-009(art-director Minor 解消): T-007 ループ2 まではカメラを屋台中心(店主)正面に置いたため、
-// 店主シルエットが画面横中央(±5%)へ来て中央の結果パネル(80%透過)背後に完全に隠れ、ART §5 構図要件
-//「頭〜肩が左右どちらかにはみ出して読める」が成立していなかった(reports/screenshots/T-007-result.png)。
-// art-director 推奨案(a)を採る: (1)注視点を屋台中心ではなく店主頭部 world≈(4.5,1.66,-25.7)へ寄せ、
-// (2)カメラ rig 全体を「カメラの右」方向(ここでは world +z 方向。カメラ前方が +x・上が +y のため右=-z で、
-//    +z へ rig を平行移動すると被写体は画面左へ寄る)へ平行移動(パン)して、店主を画面中央から左へ約23%
-//    ずらす。これで店主の頭〜肩が中央パネルの左外へはみ出して読める。パン後も裸電球2個・屋台前(最明)は
-//    画面内に残る(§7-4 維持。照明は不変で、視点のみ平行移動)。屋角の俯角(店主頭部 y1.5 を注視)も維持。
-const RESULT_CAMERA_FOV = 50 // ART §5: 50°
-const RESULT_CAMERA_DISTANCE = 4.5 // ART §5: 屋台中心へ水平距離 4.5m(正面=参道側=-x 側)
-const RESULT_CAMERA_HEIGHT = 1.8 // ART §5: 高さ 1.8m
-const RESULT_LOOK_HEIGHT = 1.5 // ART §5: 注視点高さ = +y1.5(ほぼ店主頭部 y1.66。やや見上げる客の目線)
-const RESULT_CAMERA_NEAR = 0.1
-const RESULT_CAMERA_FAR = 400
-
-// 店主頭部の world 座標(world/stall.ts: group 回転後 ≈ (4.5,1.66,-25.7))。注視点とパン基準に使う。
-const KEEPER_X = 4.5
-const KEEPER_Z = -25.7
-// パン量(world +z m)。rig(カメラ位置+注視点)を +z へ平行移動し、店主を画面中央から左へ寄せる。
-// 1280×720・FOV50°・距離4.5m では +1.8m で店主頭部が画面 x≈23%(中央パネル左端 x≈28% の左外)へ出る。
-const RESULT_KEEPER_PAN_Z = 1.8
-
 /**
- * 結果シーン(T-007 / GDD §3.2・INTERACTION_SPEC §3.4・D-008)。
+ * 結果シーン(T-007 / GDD §3.2・INTERACTION_SPEC §3.4・D-008 / StallFramework §3.3・§5)。
  *
  * 設計(DialogueScene / D-008 を踏襲):
  * - result は SceneManager のシーン。独自の 3D 世界は作らず、注入された ApproachScene の render を
  *   呼んで背景の参道world(屋台・店主・提灯)を描画する(屋台が結果表示中も見える / AC6)。
  *   world の所有は ApproachScene のまま。プレイヤー・カメラは固定(ApproachScene.update を呼ばない)。
- * - 確保数(secured = finished.caught)から game/result の resolveResult で段・見出し・店主セリフ・
- *   報酬を確定し、setResultListener 経由で React HUD(ui/Result)へ橋渡しする(EventBus 非経由)。
+ * - **多屋台パラメータ化(D-010)**: enter の payload で `{ stallId, result: StallResult }` を受け、
+ *   `registry.get(stallId).resultRules` で score→{tier/見出し/店主セリフ/報酬} を解決する(§5.2)。
+ *   結果カメラ構図も `placement` から computeResultCamera で算出する(§5.3。金魚構図は完全再現)。
  * - 入力(INTERACTION_SPEC §3.4): クリック / Enter で「参道へ戻る」→ approach へ遷移する。
- *   マウスのみ・キーボードのみ両方で進められる(§1原則)。クリックの確定は ui/Result が
- *   ボタンで受けても、本シーンが InputManager で受けても、どちらも approach へ戻れる。
- * - 音響(発火のみ、音は T-008): 結果表示時に result-success / result-fail を、確定で confirm を
- *   sfx:play で発火する(AUDIO_SPEC §4)。
+ * - 音響(発火のみ): 結果表示で result-success / result-fail を、確定で confirm を sfx:play で発火。
  *
- * 遷移オーナーの単一化(DialogueScene の routeChoice と同方針):
- * - 「参道へ戻る」の遷移は本シーンと ui/Result の両経路から呼ばれうるが、いずれも本シーンの
- *   transition('approach') 一箇所に集約する(ui/Result は確定エッジを本シーンへ knock する形ではなく、
- *   confirm の sfx と「戻る」要求を events 経由ではなく直接 onReturn コールバックで本シーンへ渡す)。
+ * 遷移オーナーの単一化: 「参道へ戻る」は本シーンの transition('approach') 一箇所に集約する。
  */
 export class ResultScene implements Scene {
   readonly id = 'result' as const
 
   private readonly background: ApproachScene
+  private readonly registry: StallRegistry
 
   /**
-   * result 専用の固定カメラ(ART §5)。background(ApproachScene)の world を、approach の追従カメラ
-   * ではなくこのカメラで描いて「屋台正面・店主中央」の構図にする。world は ApproachScene 所有のまま
-   * (二重生成しない / 性能予算 §6 を増やさない)。result 中は動かさない(追従・揺れなし)。
+   * result 専用の固定カメラ(ART §5)。enter で stallId の placement から算出する(§5.3)。
+   * background(ApproachScene)の world をこのカメラで描いて「屋台正面・店主中央」の構図にする。
    */
-  private readonly camera: PerspectiveCamera
+  private camera: PerspectiveCamera | null = null
+  /** カメラ aspect の最新値(enter でカメラ再生成時に再適用する)。 */
+  private aspect = 1
 
   private events: EventBus | null = null
   private input: InputManager | null = null
   private resultListener: ResultHudListener | null = null
 
   /** 現在の結果(enter の payload から確定)。表示と報酬反映に使う。 */
-  private outcome: ResultOutcome | null = null
+  private outcome: StallOutcome | null = null
   /** 二重遷移ガード(クリック/Enter が同フレームで複数経路から来ても 1 回だけ遷移する)。 */
   private returning = false
 
@@ -110,26 +70,11 @@ export class ResultScene implements Scene {
 
   /**
    * @param background 背景に参道world(屋台・店主)を描くための ApproachScene 参照(render のみ使う)。
+   * @param registry 屋台レジストリ(stallId→placement/resultRules を引く / D-010)。
    */
-  constructor(background: ApproachScene) {
+  constructor(background: ApproachScene, registry: StallRegistry) {
     this.background = background
-
-    // result 専用固定カメラを構築する(ART §5 数値)。aspect は最初の resize で正しく更新される。
-    this.camera = new PerspectiveCamera(
-      RESULT_CAMERA_FOV,
-      1,
-      RESULT_CAMERA_NEAR,
-      RESULT_CAMERA_FAR,
-    )
-    // 屋台正面(参道側=-x)の固定位置へ。rig 全体を +z へ RESULT_KEEPER_PAN_Z パンし(注視点も同量パン)、
-    // 注視点は店主頭部 X(=4.5)・高さ +y1.5 とする。これで店主が画面中央から左へ寄り、中央パネル背後から
-    // 頭〜肩がはみ出して読める(T-009 / ART §5 構図要件・art-director Minor 解消)。
-    this.camera.position.set(
-      STALL_POSITION.x - RESULT_CAMERA_DISTANCE,
-      RESULT_CAMERA_HEIGHT,
-      KEEPER_Z + RESULT_KEEPER_PAN_Z,
-    )
-    this.camera.lookAt(new Vector3(KEEPER_X, RESULT_LOOK_HEIGHT, KEEPER_Z + RESULT_KEEPER_PAN_Z))
+    this.registry = registry
   }
 
   /** 合成点(App.tsx)から結果 HUD の購読者を注入する(EventBus を経由しない React 橋渡し)。 */
@@ -142,20 +87,25 @@ export class ResultScene implements Scene {
     this.input = ctx.input
     this.returning = false
 
-    // 確保数(secured)と終了理由(reason)を payload から取り出し、段・見出し・店主セリフ・報酬を
-    // 確定する(GDD §3.2 v1.2)。失敗段(0匹)は reason で見出し・セリフが分岐する(torn/timeout/quit)。
-    const caught = readCaught(ctx.payload)
-    const reason = readReason(ctx.payload)
-    this.outcome = resolveResult(caught, reason)
+    // どの屋台の結果かを payload の stallId で確定し、その屋台の resultRules/placement を引く(§5)。
+    const stallId = readStallId(ctx.payload)
+    const def = this.registry.get(stallId ?? '')
+    const result = readResult(ctx.payload)
+    this.outcome = resolveStallResult(result, def.resultRules)
 
-    // 入力エッジ基準を現在状態へ揃える(goldfish から入った直後の押下を「参道へ戻る」に誤検出しない)。
+    // result 専用固定カメラを placement から算出する(§5.3。金魚の現行構図を完全再現)。
+    this.camera = computeResultCamera(def.placement)
+    this.camera.aspect = this.aspect
+    this.camera.updateProjectionMatrix()
+
+    // 入力エッジ基準を現在状態へ揃える(minigame から入った直後の押下を「参道へ戻る」に誤検出しない)。
     this.prevEnterDown = ctx.input.isDown('Enter')
     this.prevMousePressed = ctx.input.mouse.pressed
 
     // 結果 HUD を出す(ui/Result が見出し・店主セリフ・報酬・「参道へ戻る」を描画)。
     this.resultListener?.({ active: true, outcome: this.outcome })
 
-    // 結果表示時の効果音(発火のみ。音は T-008)。AUDIO_SPEC §4: 成功/大成功=result-success / 失敗=result-fail。
+    // 結果表示時の効果音(発火のみ)。AUDIO_SPEC §4: 成功/大成功=result-success / 失敗=result-fail。
     const sfx = this.outcome.tier === 'fail' ? 'result-fail' : 'result-success'
     this.events?.emit('sfx:play', { name: sfx })
   }
@@ -166,6 +116,7 @@ export class ResultScene implements Scene {
     this.events = null
     this.input = null
     this.outcome = null
+    this.camera = null
   }
 
   update(_dt: number): void {
@@ -190,25 +141,24 @@ export class ResultScene implements Scene {
   requestReturn(): void {
     if (this.returning) return
     this.returning = true
-    // 確定フィードバック音(発火のみ。音は T-008)。AUDIO_SPEC §4: confirm。
     this.events?.emit('sfx:play', { name: 'confirm' })
     this.transition('approach')
   }
 
   /**
-   * 背景に参道world(屋台・店主・提灯)を、result 専用固定カメラで描く(ART §5 / Major-2)。
-   * ApproachScene.update / approach 追従カメラは使わない(プレイヤー移動・カメラ追従は停止)。
-   * これで「屋台正面・店主中央」の構図になり、屋台が固定で見え続ける(AC6)。world は
-   * ApproachScene 所有のまま renderWith で描く(二重生成しない)。alpha は固定構図のため未使用。
+   * 背景に参道world(屋台・店主・提灯)を、result 専用固定カメラで描く(ART §5)。
+   * world は ApproachScene 所有のまま renderWith で描く(二重生成しない)。alpha は固定構図のため未使用。
    */
   render(_alpha: number): void {
-    this.background.renderWith(this.camera)
+    if (this.camera) this.background.renderWith(this.camera)
   }
 
   resize(width: number, height: number): void {
-    // result 専用カメラの aspect を更新する(approach 側カメラは触らない)。
-    this.camera.aspect = height > 0 ? width / height : 1
-    this.camera.updateProjectionMatrix()
+    this.aspect = height > 0 ? width / height : 1
+    if (this.camera) {
+      this.camera.aspect = this.aspect
+      this.camera.updateProjectionMatrix()
+    }
   }
 
   // --- 内部 ---
@@ -237,23 +187,20 @@ export class ResultScene implements Scene {
   }
 }
 
-/** enter の payload(unknown)から確保数(secured)を安全に取り出す。 */
-function readCaught(payload: unknown): number {
-  if (payload && typeof payload === 'object' && 'caught' in payload) {
-    const v = (payload as ResultPayload).caught
-    if (typeof v === 'number') return v
+/** enter の payload(unknown)から StallResult を安全に取り出す(なければ 0 点・破損)。 */
+function readResult(payload: unknown): StallResult {
+  if (payload && typeof payload === 'object' && 'result' in payload) {
+    const r = (payload as { result: unknown }).result
+    if (r && typeof r === 'object' && 'score' in r && 'reason' in r) {
+      const score = (r as { score: unknown }).score
+      const reason = (r as { reason: unknown }).reason
+      if (
+        typeof score === 'number' &&
+        (reason === 'success' || reason === 'timeout' || reason === 'broke' || reason === 'quit')
+      ) {
+        return { score, reason }
+      }
+    }
   }
-  return 0
-}
-
-/**
- * enter の payload(unknown)から終了理由(reason)を安全に取り出す(GDD §3.2 v1.2)。
- * 未指定/不正値は破損(torn)へ丸める(resolveResult の既定と一致)。
- */
-function readReason(payload: unknown): ResultReason {
-  if (payload && typeof payload === 'object' && 'reason' in payload) {
-    const v = (payload as ResultPayload).reason
-    if (v === 'torn' || v === 'timeout' || v === 'quit') return v
-  }
-  return 'torn'
+  return { score: 0, reason: 'broke' }
 }

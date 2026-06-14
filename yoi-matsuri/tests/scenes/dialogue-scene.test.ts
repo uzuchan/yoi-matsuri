@@ -291,4 +291,40 @@ describe('DialogueScene(段A 駆動ロジック)', () => {
 
     expect(render).toHaveBeenCalledWith(0.5)
   })
+
+  // --- D-010: 多屋台パラメータ化(§3.3) ---
+
+  it('enter payload の stallId で controllerResolver から controller を解決し start する', () => {
+    const { scene, events, input } = setup()
+    const resolved = createFakeController()
+    const resolver = vi.fn((_id: string) => resolved.controller)
+    scene.setControllerResolver(resolver)
+
+    scene.enter({ events, input, payload: { stallId: 'shooting' } } as SceneContext)
+
+    expect(resolver).toHaveBeenCalledWith('shooting')
+    expect(resolved.calls).toContain('start') // 解決した controller を start している
+    expect(scene.currentStallId).toBe('shooting')
+  })
+
+  it('enter で activeControllerListener へ解決した controller を渡す(クリック経路の集約先)', () => {
+    const { scene, events, input } = setup()
+    const resolved = createFakeController()
+    scene.setControllerResolver(() => resolved.controller)
+    const seen: unknown[] = []
+    scene.setActiveControllerListener((c) => seen.push(c))
+
+    scene.enter({ events, input, payload: { stallId: 'a' } } as SceneContext)
+    expect(seen.at(-1)).toBe(resolved.controller)
+
+    scene.exit()
+    expect(seen.at(-1)).toBeNull() // exit で切り離す
+  })
+
+  it('resolver 未注入 / stallId なしのときは既定 controller を使う(後方互換)', () => {
+    const { scene, ctx, calls } = setup() // ctx は payload なし
+    scene.enter(ctx)
+    expect(calls).toContain('start')
+    expect(scene.currentStallId).toBeNull()
+  })
 })
