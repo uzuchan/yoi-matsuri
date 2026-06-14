@@ -16,8 +16,10 @@ import {
   STALL_POSITION,
   WALK_BOUNDS,
   computeCrowdPlacements,
+  computeFestivalStallPlacements,
   computeLanternAnchors,
   createCrowd,
+  createFestivalStalls,
   createFireworks,
   createGround,
   createLanterns,
@@ -169,6 +171,9 @@ export class ApproachScene implements Scene {
     const lanterns = createLanterns()
     const torii = createTorii()
     const stall = createStall()
+    // 参道の賑わい(T-012): 縁日屋台 約19軒(装飾・非インタラクティブ)。既存の金魚すくい屋台
+    // (stall)はそのまま残し、これと合わせて約20軒に見せる。近接プロンプトは金魚すくいのみ。
+    const festivalStalls = createFestivalStalls()
     const crowd = createCrowd()
     const lighting = createLighting(lanternLightAnchors)
     this.player = createPlayer()
@@ -194,6 +199,7 @@ export class ApproachScene implements Scene {
       lanterns,
       torii,
       stall,
+      festivalStalls,
       crowd,
       this.fireworks,
       this.player,
@@ -489,6 +495,11 @@ export class ApproachScene implements Scene {
 
     // 屋台(間口3m×奥行2m を覆う大きめの円)。
     circles.push({ x: STALL_POSITION.x, z: STALL_POSITION.z, radius: 2.4 })
+
+    // 縁日屋台 約19軒(T-012)の足元(影代用の接地円。配置と同一の決定論的座標)。
+    for (const p of computeFestivalStallPlacements()) {
+      circles.push({ x: p.x, z: p.z, radius: 1.6 })
+    }
 
     // 鳥居の二本柱の足元。
     const toriiPillarHalfSpan = 3

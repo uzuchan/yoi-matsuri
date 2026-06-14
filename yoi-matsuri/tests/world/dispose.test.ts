@@ -2,6 +2,7 @@ import { Vector2 } from 'three'
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 import { ApproachScene } from '../../src/scenes/approach/ApproachScene'
 import { createCrowd } from '../../src/world/crowd'
+import { createFestivalStalls } from '../../src/world/festivalStalls'
 import { createGround } from '../../src/world/ground'
 import { createLanterns } from '../../src/world/lanterns'
 import { createLighting } from '../../src/world/lighting'
@@ -20,6 +21,8 @@ import type { WorldObject } from '../../src/world/types'
 beforeAll(() => {
   const fake2dContext = {
     clearRect: () => {},
+    fillRect: () => {},
+    strokeRect: () => {},
     strokeText: () => {},
     fillText: () => {},
     font: '',
@@ -70,6 +73,7 @@ describe('WorldObject ビルダーの dispose は idempotent(M-2対応)', () => 
     ['lanterns', createLanterns],
     ['torii', createTorii],
     ['stall', createStall],
+    ['festival-stalls', createFestivalStalls],
     ['crowd', createCrowd],
     [
       'lighting',

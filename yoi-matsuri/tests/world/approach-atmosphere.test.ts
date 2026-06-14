@@ -18,6 +18,8 @@ import { FOOTSTEP_INTERVAL } from '../../src/world/atmosphere'
 beforeAll(() => {
   const fake2dContext = {
     clearRect: () => {},
+    fillRect: () => {},
+    strokeRect: () => {},
     strokeText: () => {},
     fillText: () => {},
     font: '',
