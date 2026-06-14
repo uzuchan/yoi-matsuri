@@ -1,5 +1,7 @@
 import { StallRegistry } from '../registry'
 import { goldfishStallDefinition } from './goldfish'
+import { superballStallDefinition } from './superball'
+import { maskStallDefinition } from './mask'
 
 /**
  * 全屋台 StallDefinition の登録(StallFramework §2.3 / §2.4)。
@@ -13,7 +15,11 @@ import { goldfishStallDefinition } from './goldfish'
 export function createStallRegistry(): StallRegistry {
   const registry = new StallRegistry()
   registry.register(goldfishStallDefinition)
+  registry.register(superballStallDefinition) // P2 量産実証(SCOOP 原型・1行追加)
+  registry.register(maskStallDefinition) // P2 量産実証(CHOICE 原型・1行追加)
   return registry
 }
 
 export { goldfishStallDefinition } from './goldfish'
+export { superballStallDefinition } from './superball'
+export { maskStallDefinition } from './mask'

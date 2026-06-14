@@ -28,7 +28,11 @@ async function returnToApproachViaResult(page: Page): Promise<void> {
   await expect(page.locator(RESULT)).toHaveCount(0)
 }
 
-/** 参道入口からキーボードで屋台へ歩き、近接圏で E を押して会話を開く。 */
+/**
+ * 参道入口からキーボードで屋台へ歩き、近接圏で E を押して**金魚すくいの会話**を開く。
+ * P2 で参道にお面屋(z=-23.5)が金魚すくい(z=-26)の手前へ並んだため、手前のお面屋会話が先に
+ * 開くことがある。金魚すくい以外の会話が開いたら Esc で閉じて歩き続け、金魚すくいに到達するまで進む。
+ */
 async function walkToStallAndOpen(page: Page): Promise<void> {
   await page.goto('/')
   const canvas = page.locator('canvas.game-canvas')
@@ -45,12 +49,20 @@ async function walkToStallAndOpen(page: Page): Promise<void> {
     await page.waitForTimeout(150)
     await page.keyboard.press('KeyE')
     if (await page.locator(DIALOGUE).count()) {
-      opened = true
-      break
+      // 金魚すくいの会話か判定。1 回 Enter で送り中の全文を即時表示してからイントロに「金魚」を含むか見る。
+      await page.keyboard.press('Enter')
+      await page.waitForTimeout(120)
+      const text = (await page.locator('.dialogue__text').first().textContent()) ?? ''
+      if (text.includes('金魚')) {
+        opened = true
+        break
+      }
+      await page.keyboard.press('Escape')
+      await page.waitForTimeout(150)
     }
   }
   await page.keyboard.up('KeyW')
-  expect(opened, '屋台に到達して会話を開始できる').toBe(true)
+  expect(opened, '金魚すくい屋台に到達して会話を開始できる').toBe(true)
   await expect(page.locator(DIALOGUE)).toBeVisible()
 }
 
