@@ -20,8 +20,8 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 - docs/BACKLOG.md(担当タスクカード)
 
 ## 編集可能なディレクトリ・ファイル
-- natsumatsuri-interactive/src/world/, src/scenes/approach/
-- natsumatsuri-interactive/tests/(担当領域のテスト)
+- yoi-matsuri/src/world/, src/scenes/approach/
+- yoi-matsuri/tests/(担当領域のテスト)
 - タスクカードのEditable Filesで明示された追加ファイル
 
 ## 変更禁止領域

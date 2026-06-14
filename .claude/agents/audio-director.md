@@ -22,8 +22,8 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 
 ## 編集可能なディレクトリ・ファイル
 - docs/AUDIO_SPEC.md
-- natsumatsuri-interactive/src/audio/
-- natsumatsuri-interactive/tests/(音響ロジックのテスト: イベント→再生指示のマッピング等)
+- yoi-matsuri/src/audio/
+- yoi-matsuri/tests/(音響ロジックのテスト: イベント→再生指示のマッピング等)
 
 ## 変更禁止領域
 - src/core/, src/game/, src/scenes/, src/world/, src/ui/(音の発火点が必要な場合はイベント名を定義し、実装エージェントへ依頼する)

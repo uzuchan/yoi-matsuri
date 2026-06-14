@@ -8,7 +8,7 @@
 
 ## D-001 (2026-06-13) 既存のVite + React 19 + TypeScriptテンプレートを維持する
 
-- **決定**: `natsumatsuri-interactive/` の既存構成(Vite 8, React 19, TS 6, ESLint flat config)をそのまま土台にする
+- **決定**: `yoi-matsuri/` の既存構成(Vite 8, React 19, TS 6, ESLint flat config)をそのまま土台にする
 - **理由**: ルール「既存のpackage.jsonとディレクトリ構成を不必要に作り直さない」。テンプレートは健全(lint/build成功確認済み)
 - **代替案**: ゼロから vanilla TS で再構築 → 却下(作り直しコストに見合う利点なし。ReactはHUD/ダイアログに有用)
 - **影響**: UIはReact、ゲーム本体はcanvas/WebGLという2層構成になる

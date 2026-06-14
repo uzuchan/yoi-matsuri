@@ -21,8 +21,8 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 - docs/BACKLOG.md(担当タスクカード。Editable Files/Forbidden Changesを厳守)
 
 ## 編集可能なディレクトリ・ファイル
-- natsumatsuri-interactive/src/game/, src/scenes/goldfish/, src/ui/
-- natsumatsuri-interactive/tests/(担当領域のテスト)
+- yoi-matsuri/src/game/, src/scenes/goldfish/, src/ui/
+- yoi-matsuri/tests/(担当領域のテスト)
 - タスクカードのEditable Filesで明示された追加ファイル
 
 ## 変更禁止領域

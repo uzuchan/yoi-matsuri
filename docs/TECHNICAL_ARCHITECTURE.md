@@ -19,7 +19,7 @@
 ## 2. ディレクトリ構成とモジュール境界
 
 ```
-natsumatsuri-interactive/src/
+yoi-matsuri/src/
 ├── core/     # GameLoop, SceneManager, InputManager, EventBus, Dialogue(契約), rng
 ├── game/     # 純TSドメインロジック。three/react/DOMをimport禁止
 │   ├── goldfish/  # params.ts(全パラメータ), poi.ts, fish.ts, session.ts

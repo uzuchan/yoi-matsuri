@@ -21,7 +21,7 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 
 ## 編集可能なディレクトリ・ファイル
 - docs/QUALITY_GATES.md
-- natsumatsuri-interactive/e2e/, natsumatsuri-interactive/tests/
+- yoi-matsuri/e2e/, yoi-matsuri/tests/
 - reports/qa/(計測結果、バグレポート)
 
 ## 変更禁止領域

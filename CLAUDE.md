@@ -10,7 +10,7 @@
 ├── .claude/agents/              # 10体の専門サブエージェント定義
 ├── docs/                        # プロダクト文書(下記参照)
 ├── reports/                     # CURRENT_STATUS.md, reviews/, qa/, handoffs/
-└── natsumatsuri-interactive/    # アプリ本体(Vite + React 19 + TypeScript)
+└── yoi-matsuri/    # アプリ本体(Vite + React 19 + TypeScript)
     ├── src/
     │   ├── core/    # GameLoop, SceneManager, InputManager, EventBus(所有: technical-architect)
     │   ├── game/    # 純TSドメインロジック(所有: gameplay-engineer)
@@ -22,7 +22,7 @@
     └── e2e/         # Playwright E2E tests
 ```
 
-## コマンド(natsumatsuri-interactive/ で実行)
+## コマンド(yoi-matsuri/ で実行)
 
 ```bash
 npm run dev        # 開発サーバー

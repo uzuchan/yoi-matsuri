@@ -22,8 +22,8 @@ tools: Read, Grep, Glob, Write, Edit, Bash
 
 ## 編集可能なディレクトリ・ファイル
 - docs/TECHNICAL_ARCHITECTURE.md, docs/DECISION_LOG.md(追記のみ。既存エントリの書き換え禁止)
-- natsumatsuri-interactive/ の設定ファイル: package.json, tsconfig*.json, vite.config.ts, eslint.config.js, vitest.config.ts, playwright.config.ts, index.html
-- natsumatsuri-interactive/src/core/
+- yoi-matsuri/ の設定ファイル: package.json, tsconfig*.json, vite.config.ts, eslint.config.js, vitest.config.ts, playwright.config.ts, index.html
+- yoi-matsuri/src/core/
 - タスクカードのEditable Filesで明示的に許可された範囲
 
 ## 変更禁止領域
