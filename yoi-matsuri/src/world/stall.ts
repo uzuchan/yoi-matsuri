@@ -4,7 +4,6 @@ import {
   CylinderGeometry,
   Group,
   Mesh,
-  MeshBasicMaterial,
   MeshLambertMaterial,
   MeshStandardMaterial,
   SphereGeometry,
@@ -77,8 +76,17 @@ export function createStall(): WorldObject {
   const tankMaterial = new MeshLambertMaterial({
     color: new Color(PALETTE.groundDirt).multiplyScalar(0.7),
   })
-  // 店主シルエットは群衆と同じ無発光シルエット色 #0d1126。
-  const keeperMaterial = new MeshBasicMaterial({ color: PALETTE.crowd })
+  // 店主の胴・頭(F-004 / ART §5): 結果画面は屋台 PointLight が店主背面に回り込みにくく、
+  // 旧 無発光 #0d1126 では暗背景に埋もれて「店主の反応」(本作の感情的ペイオフ)が読めなかった。
+  // 店主も人型なのでプレイヤー胴と同じ寒色の床値 #1b2240 を採り、同色 emissive を重ねて
+  // 照明の有無で純黒へ沈ませない(将来の glTF 店主 D-009 の body 正規化=#1b2240/emissive とも一致)。
+  const keeperMaterial = new MeshStandardMaterial({
+    color: PALETTE.playerBody,
+    emissive: new Color(PALETTE.playerBody),
+    emissiveIntensity: 0.9,
+    roughness: 0.85,
+    metalness: 0,
+  })
   const apronMaterial = new MeshLambertMaterial({ color: PALETTE.stallCurtainWhite }) // 前掛け
 
   // dispose対象を集約。
@@ -173,7 +181,7 @@ export function createStall(): WorldObject {
 /** 店主の単純化人型シルエット(胴+頭+前掛け)。 */
 function createKeeper(
   track: <T extends { dispose(): void }>(g: T) => T,
-  bodyMaterial: MeshBasicMaterial,
+  bodyMaterial: MeshStandardMaterial,
   apronMaterial: MeshLambertMaterial,
 ): Group {
   const keeper = new Group()
