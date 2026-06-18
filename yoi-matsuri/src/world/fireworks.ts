@@ -208,7 +208,10 @@ export class FireworkShell {
     const gravityDrop = 0.5 * GRAVITY * t * t
     // 残光フェード: 寿命の前半は明るさ頂点(ただし加算合成の白飽和を避けるため 1 未満に抑える)、
     // 後半で滑らかに 0 へ。
-    const PEAK = 0.85
+    // F-002(開花の白飛び低減・色相可読性): 開花直後は粒が開花点近傍に密集し、加算合成で
+    // 中心が白へ飽和して #ff6b9d/#ffd166/#4ecdc4 の色相が読めなくなる。ピーク輝度を 0.85→0.7 へ
+    // 下げ、密集時の白飽和を抑えて各色が読めるようにする(粒サイズ拡大と併せて F-002 を解消)。
+    const PEAK = 0.7
     const lifeK = t / BURST_LIFETIME
     const fade = lifeK < 0.45 ? PEAK : PEAK * (1 - (lifeK - 0.45) / 0.55)
     this.alpha = Math.max(0, fade)
@@ -303,9 +306,10 @@ export function createFireworks(
     geometry.setAttribute('position', positionAttr)
     geometry.setDrawRange(0, 0)
     const material = new PointsMaterial({
-      // 粒は小さめに保ち、加算合成での重なりが白飽和しないようにする(色を読ませる)。
-      // 遠方(z≈-42〜-52m)でも個々の火花が散って見える程度。
-      size: 0.45,
+      // 粒は遠方(z≈-42〜-52m)でも個々の火花の色相が読める程度の大きさにする。
+      // F-002: 小さすぎると点がアンチエイリアスで白く溶けて色が読めないため 0.45→0.6 へ拡大。
+      // 拡大で増える重なりの白飽和は PEAK 引き下げ(0.7)で相殺する。
+      size: 0.6,
       sizeAttenuation: true,
       transparent: true,
       depthWrite: false,

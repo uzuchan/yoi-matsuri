@@ -1,8 +1,16 @@
-import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshLambertMaterial } from 'three'
+import { BoxGeometry, Color, CylinderGeometry, Group, Mesh, MeshLambertMaterial } from 'three'
 import { APPROACH, PALETTE } from './palette'
 import type { WorldObject } from './types'
 
 // ART §3 鳥居: 高さ8m、シルエット重視・ディテール不要。色 #b03a2e。
+// 鳥居は参道終端 z≈-60 で動的 PointLight(屋台 z=-26 / 提灯)がほぼ届かず、無発光だと純黒へ沈み、
+// 参道の象徴(焦点)が死ぬ。プレイヤー/店主と同じ「純黒へ沈ませない床値」思想(ART §2)を適用し、
+// 朱と同色の弱い emissive を与えて、夜空の中でもシルエット朱がほのかに読める焦点にする。
+// 鳥居は z≈-60(カメラから約69m)。FogExp2(密度0.028)では色の約97%が fog 色 #141a38 へ
+// 置換され、emissive だけでは靄に飲まれて焦点にならない。提灯/裸電球と同じ「夜でも読める光」の
+// 扱いとして、鳥居マテリアルだけ fog を無効化し、靄を抜けて浮かぶ朱の門として読ませる。
+// emissive はネオン化を避ける弱め(0.6)。fog 無効と併せて朱が読める焦点になる。
+const TORII_EMISSIVE_INTENSITY = 0.6
 const HEIGHT = APPROACH.toriiHeight // 8m
 const PILLAR_RADIUS = 0.3
 const PILLAR_SPAN = 6 // 二本柱の間隔(参道幅8mに収まる)
@@ -21,7 +29,13 @@ export function createTorii(): WorldObject {
   group.name = 'torii'
   group.position.z = APPROACH.toriiZ
 
-  const material = new MeshLambertMaterial({ color: PALETTE.torii })
+  const material = new MeshLambertMaterial({
+    color: PALETTE.torii,
+    emissive: new Color(PALETTE.torii),
+    emissiveIntensity: TORII_EMISSIVE_INTENSITY,
+    // 遠方フォグに飲まれないよう鳥居だけ fog を無効化(上記コメント参照)。
+    fog: false,
+  })
 
   // 柱(左右)。
   const pillarGeometry = new CylinderGeometry(PILLAR_RADIUS, PILLAR_RADIUS * 1.15, HEIGHT, 8)
